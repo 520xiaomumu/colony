@@ -1,0 +1,1034 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>视频引擎</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;color:#fafafa;font:14px "Microsoft YaHei","PingFang SC",sans-serif}
+#cv{position:absolute;left:0;top:0;display:block;cursor:pointer}
+#bar{position:fixed;left:0;right:0;bottom:0;height:44px;box-sizing:border-box;display:flex;align-items:center;gap:10px;
+padding:0 12px;background:#0d0d0d;border-top:1px solid #222}
+#bar button{background:#B5FF00;color:#0a0a0a;border:2px solid #000;border-radius:8px;padding:3px 10px;font:inherit;font-weight:700;
+cursor:pointer;box-shadow:2px 2px 0 #000}
+#bar button:disabled{opacity:.6}
+#track{position:relative;flex:1;height:6px;background:#262626;border-radius:3px;cursor:pointer}
+#fill{position:absolute;left:0;top:0;bottom:0;background:#B5FF00;border-radius:3px}
+#track i{position:absolute;top:-5px;width:2px;height:16px;background:#666}
+#time{font:12px Consolas,monospace;color:#8a8a8a;min-width:84px;text-align:right}
+#lint{background:#1a1a1a!important;color:#fafafa!important}
+#panel{position:fixed;right:12px;bottom:56px;width:min(520px,calc(100vw - 24px));max-height:60vh;overflow:auto;display:none;
+box-sizing:border-box;padding:12px 14px;background:#131313;border:2px solid #000;box-shadow:4px 4px 0 #000;border-radius:10px;
+white-space:pre-wrap;line-height:1.6}
+</style></head><body>
+<canvas id="cv"></canvas>
+<div id="bar"><button id="pp">❚❚</button><div id="track"><div id="fill"></div></div><span id="time"></span>
+<button id="lint">自检</button><button id="exp">导出视频</button></div>
+<div id="panel"></div>
+<!-- 文字排版: pretext (github.com/chenglou/pretext, MIT, v0.0.9), 原样打包 -->
+<script>var Pretext=(()=>{var c0=Object.defineProperty;var Ne=Object.getOwnPropertyDescriptor;var Se=Object.getOwnPropertyNames;var Ae=Object.prototype.hasOwnProperty;var Ee=(e,t)=>{for(var n in t)c0(e,n,{get:t[n],enumerable:!0})},he=(e,t,n,x)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of Se(t))!Ae.call(e,i)&&i!==n&&c0(e,i,{get:()=>t[i],enumerable:!(x=Ne(t,i))||x.enumerable});return e};var de=e=>he(c0({},"__esModule",{value:!0}),e);var Qt={};Ee(Qt,{layoutWithLines:()=>ae,measureLineStats:()=>Fe,measureNaturalWidth:()=>ce,prepareWithSegments:()=>le,walkLineRanges:()=>oe});var m0=["BN","BN","BN","BN","BN","BN","BN","BN","BN","S","B","S","WS","B","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","B","B","B","S","WS","ON","ON","ET","ET","ET","ON","ON","ON","ON","ON","ES","CS","ES","CS","CS","EN","EN","EN","EN","EN","EN","EN","EN","EN","EN","CS","ON","ON","ON","ON","ON","ON","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","ON","ON","ON","ON","ON","ON","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","ON","ON","ON","ON","BN","BN","BN","BN","BN","BN","B","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","CS","ON","ET","ET","ET","ET","ON","ON","ON","ON","L","ON","ON","BN","ON","ON","ET","ET","EN","EN","ON","L","ON","ON","ON","EN","L","ON","ON","ON","ON","ON","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","ON","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","L","ON","L","L","L","L","L","L","L","L"],a0=[[697,698,"ON"],[706,719,"ON"],[722,735,"ON"],[741,749,"ON"],[751,767,"ON"],[768,879,"NSM"],[884,885,"ON"],[894,894,"ON"],[900,901,"ON"],[903,903,"ON"],[1014,1014,"ON"],[1155,1161,"NSM"],[1418,1418,"ON"],[1421,1422,"ON"],[1423,1423,"ET"],[1424,1424,"R"],[1425,1469,"NSM"],[1470,1470,"R"],[1471,1471,"NSM"],[1472,1472,"R"],[1473,1474,"NSM"],[1475,1475,"R"],[1476,1477,"NSM"],[1478,1478,"R"],[1479,1479,"NSM"],[1480,1535,"R"],[1536,1541,"AN"],[1542,1543,"ON"],[1544,1544,"AL"],[1545,1546,"ET"],[1547,1547,"AL"],[1548,1548,"CS"],[1549,1549,"AL"],[1550,1551,"ON"],[1552,1562,"NSM"],[1563,1610,"AL"],[1611,1631,"NSM"],[1632,1641,"AN"],[1642,1642,"ET"],[1643,1644,"AN"],[1645,1647,"AL"],[1648,1648,"NSM"],[1649,1749,"AL"],[1750,1756,"NSM"],[1757,1757,"AN"],[1758,1758,"ON"],[1759,1764,"NSM"],[1765,1766,"AL"],[1767,1768,"NSM"],[1769,1769,"ON"],[1770,1773,"NSM"],[1774,1775,"AL"],[1776,1785,"EN"],[1786,1808,"AL"],[1809,1809,"NSM"],[1810,1839,"AL"],[1840,1866,"NSM"],[1867,1957,"AL"],[1958,1968,"NSM"],[1969,1983,"AL"],[1984,2026,"R"],[2027,2035,"NSM"],[2036,2037,"R"],[2038,2041,"ON"],[2042,2044,"R"],[2045,2045,"NSM"],[2046,2069,"R"],[2070,2073,"NSM"],[2074,2074,"R"],[2075,2083,"NSM"],[2084,2084,"R"],[2085,2087,"NSM"],[2088,2088,"R"],[2089,2093,"NSM"],[2094,2136,"R"],[2137,2139,"NSM"],[2140,2143,"R"],[2144,2191,"AL"],[2192,2193,"AN"],[2194,2198,"AL"],[2199,2207,"NSM"],[2208,2249,"AL"],[2250,2273,"NSM"],[2274,2274,"AN"],[2275,2306,"NSM"],[2362,2362,"NSM"],[2364,2364,"NSM"],[2369,2376,"NSM"],[2381,2381,"NSM"],[2385,2391,"NSM"],[2402,2403,"NSM"],[2433,2433,"NSM"],[2492,2492,"NSM"],[2497,2500,"NSM"],[2509,2509,"NSM"],[2530,2531,"NSM"],[2546,2547,"ET"],[2555,2555,"ET"],[2558,2558,"NSM"],[2561,2562,"NSM"],[2620,2620,"NSM"],[2625,2626,"NSM"],[2631,2632,"NSM"],[2635,2637,"NSM"],[2641,2641,"NSM"],[2672,2673,"NSM"],[2677,2677,"NSM"],[2689,2690,"NSM"],[2748,2748,"NSM"],[2753,2757,"NSM"],[2759,2760,"NSM"],[2765,2765,"NSM"],[2786,2787,"NSM"],[2801,2801,"ET"],[2810,2815,"NSM"],[2817,2817,"NSM"],[2876,2876,"NSM"],[2879,2879,"NSM"],[2881,2884,"NSM"],[2893,2893,"NSM"],[2901,2902,"NSM"],[2914,2915,"NSM"],[2946,2946,"NSM"],[3008,3008,"NSM"],[3021,3021,"NSM"],[3059,3064,"ON"],[3065,3065,"ET"],[3066,3066,"ON"],[3072,3072,"NSM"],[3076,3076,"NSM"],[3132,3132,"NSM"],[3134,3136,"NSM"],[3142,3144,"NSM"],[3146,3149,"NSM"],[3157,3158,"NSM"],[3170,3171,"NSM"],[3192,3198,"ON"],[3201,3201,"NSM"],[3260,3260,"NSM"],[3276,3277,"NSM"],[3298,3299,"NSM"],[3328,3329,"NSM"],[3387,3388,"NSM"],[3393,3396,"NSM"],[3405,3405,"NSM"],[3426,3427,"NSM"],[3457,3457,"NSM"],[3530,3530,"NSM"],[3538,3540,"NSM"],[3542,3542,"NSM"],[3633,3633,"NSM"],[3636,3642,"NSM"],[3647,3647,"ET"],[3655,3662,"NSM"],[3761,3761,"NSM"],[3764,3772,"NSM"],[3784,3790,"NSM"],[3864,3865,"NSM"],[3893,3893,"NSM"],[3895,3895,"NSM"],[3897,3897,"NSM"],[3898,3901,"ON"],[3953,3966,"NSM"],[3968,3972,"NSM"],[3974,3975,"NSM"],[3981,3991,"NSM"],[3993,4028,"NSM"],[4038,4038,"NSM"],[4141,4144,"NSM"],[4146,4151,"NSM"],[4153,4154,"NSM"],[4157,4158,"NSM"],[4184,4185,"NSM"],[4190,4192,"NSM"],[4209,4212,"NSM"],[4226,4226,"NSM"],[4229,4230,"NSM"],[4237,4237,"NSM"],[4253,4253,"NSM"],[4957,4959,"NSM"],[5008,5017,"ON"],[5120,5120,"ON"],[5760,5760,"WS"],[5787,5788,"ON"],[5906,5908,"NSM"],[5938,5939,"NSM"],[5970,5971,"NSM"],[6002,6003,"NSM"],[6068,6069,"NSM"],[6071,6077,"NSM"],[6086,6086,"NSM"],[6089,6099,"NSM"],[6107,6107,"ET"],[6109,6109,"NSM"],[6128,6137,"ON"],[6144,6154,"ON"],[6155,6157,"NSM"],[6158,6158,"BN"],[6159,6159,"NSM"],[6277,6278,"NSM"],[6313,6313,"NSM"],[6432,6434,"NSM"],[6439,6440,"NSM"],[6450,6450,"NSM"],[6457,6459,"NSM"],[6464,6464,"ON"],[6468,6469,"ON"],[6622,6655,"ON"],[6679,6680,"NSM"],[6683,6683,"NSM"],[6742,6742,"NSM"],[6744,6750,"NSM"],[6752,6752,"NSM"],[6754,6754,"NSM"],[6757,6764,"NSM"],[6771,6780,"NSM"],[6783,6783,"NSM"],[6832,6877,"NSM"],[6880,6891,"NSM"],[6912,6915,"NSM"],[6964,6964,"NSM"],[6966,6970,"NSM"],[6972,6972,"NSM"],[6978,6978,"NSM"],[7019,7027,"NSM"],[7040,7041,"NSM"],[7074,7077,"NSM"],[7080,7081,"NSM"],[7083,7085,"NSM"],[7142,7142,"NSM"],[7144,7145,"NSM"],[7149,7149,"NSM"],[7151,7153,"NSM"],[7212,7219,"NSM"],[7222,7223,"NSM"],[7376,7378,"NSM"],[7380,7392,"NSM"],[7394,7400,"NSM"],[7405,7405,"NSM"],[7412,7412,"NSM"],[7416,7417,"NSM"],[7616,7679,"NSM"],[8125,8125,"ON"],[8127,8129,"ON"],[8141,8143,"ON"],[8157,8159,"ON"],[8173,8175,"ON"],[8189,8190,"ON"],[8192,8202,"WS"],[8203,8205,"BN"],[8207,8207,"R"],[8208,8231,"ON"],[8232,8232,"WS"],[8233,8233,"B"],[8234,8238,"BN"],[8239,8239,"CS"],[8240,8244,"ET"],[8245,8259,"ON"],[8260,8260,"CS"],[8261,8286,"ON"],[8287,8287,"WS"],[8288,8303,"BN"],[8304,8304,"EN"],[8308,8313,"EN"],[8314,8315,"ES"],[8316,8318,"ON"],[8320,8329,"EN"],[8330,8331,"ES"],[8332,8334,"ON"],[8352,8399,"ET"],[8400,8432,"NSM"],[8448,8449,"ON"],[8451,8454,"ON"],[8456,8457,"ON"],[8468,8468,"ON"],[8470,8472,"ON"],[8478,8483,"ON"],[8485,8485,"ON"],[8487,8487,"ON"],[8489,8489,"ON"],[8494,8494,"ET"],[8506,8507,"ON"],[8512,8516,"ON"],[8522,8525,"ON"],[8528,8543,"ON"],[8585,8587,"ON"],[8592,8721,"ON"],[8722,8722,"ES"],[8723,8723,"ET"],[8724,9013,"ON"],[9083,9108,"ON"],[9110,9257,"ON"],[9280,9290,"ON"],[9312,9351,"ON"],[9352,9371,"EN"],[9450,9899,"ON"],[9901,10239,"ON"],[10496,11123,"ON"],[11126,11263,"ON"],[11493,11498,"ON"],[11503,11505,"NSM"],[11513,11519,"ON"],[11647,11647,"NSM"],[11744,11775,"NSM"],[11776,11869,"ON"],[11904,11929,"ON"],[11931,12019,"ON"],[12032,12245,"ON"],[12272,12287,"ON"],[12288,12288,"WS"],[12289,12292,"ON"],[12296,12320,"ON"],[12330,12333,"NSM"],[12336,12336,"ON"],[12342,12343,"ON"],[12349,12351,"ON"],[12441,12442,"NSM"],[12443,12444,"ON"],[12448,12448,"ON"],[12539,12539,"ON"],[12736,12773,"ON"],[12783,12783,"ON"],[12829,12830,"ON"],[12880,12895,"ON"],[12924,12926,"ON"],[12977,12991,"ON"],[13004,13007,"ON"],[13175,13178,"ON"],[13278,13279,"ON"],[13311,13311,"ON"],[19904,19967,"ON"],[42128,42182,"ON"],[42509,42511,"ON"],[42607,42610,"NSM"],[42611,42611,"ON"],[42612,42621,"NSM"],[42622,42623,"ON"],[42654,42655,"NSM"],[42736,42737,"NSM"],[42752,42785,"ON"],[42888,42888,"ON"],[43010,43010,"NSM"],[43014,43014,"NSM"],[43019,43019,"NSM"],[43045,43046,"NSM"],[43048,43051,"ON"],[43052,43052,"NSM"],[43064,43065,"ET"],[43124,43127,"ON"],[43204,43205,"NSM"],[43232,43249,"NSM"],[43263,43263,"NSM"],[43302,43309,"NSM"],[43335,43345,"NSM"],[43392,43394,"NSM"],[43443,43443,"NSM"],[43446,43449,"NSM"],[43452,43453,"NSM"],[43493,43493,"NSM"],[43561,43566,"NSM"],[43569,43570,"NSM"],[43573,43574,"NSM"],[43587,43587,"NSM"],[43596,43596,"NSM"],[43644,43644,"NSM"],[43696,43696,"NSM"],[43698,43700,"NSM"],[43703,43704,"NSM"],[43710,43711,"NSM"],[43713,43713,"NSM"],[43756,43757,"NSM"],[43766,43766,"NSM"],[43882,43883,"ON"],[44005,44005,"NSM"],[44008,44008,"NSM"],[44013,44013,"NSM"],[64285,64285,"R"],[64286,64286,"NSM"],[64287,64296,"R"],[64297,64297,"ES"],[64298,64335,"R"],[64336,64450,"AL"],[64451,64466,"ON"],[64467,64829,"AL"],[64830,64847,"ON"],[64848,64911,"AL"],[64912,64913,"ON"],[64914,64967,"AL"],[64968,64975,"ON"],[64976,65007,"BN"],[65008,65020,"AL"],[65021,65023,"ON"],[65024,65039,"NSM"],[65040,65049,"ON"],[65056,65071,"NSM"],[65072,65103,"ON"],[65104,65104,"CS"],[65105,65105,"ON"],[65106,65106,"CS"],[65108,65108,"ON"],[65109,65109,"CS"],[65110,65118,"ON"],[65119,65119,"ET"],[65120,65121,"ON"],[65122,65123,"ES"],[65124,65126,"ON"],[65128,65128,"ON"],[65129,65130,"ET"],[65131,65131,"ON"],[65136,65278,"AL"],[65279,65279,"BN"],[65281,65282,"ON"],[65283,65285,"ET"],[65286,65290,"ON"],[65291,65291,"ES"],[65292,65292,"CS"],[65293,65293,"ES"],[65294,65295,"CS"],[65296,65305,"EN"],[65306,65306,"CS"],[65307,65312,"ON"],[65339,65344,"ON"],[65371,65381,"ON"],[65504,65505,"ET"],[65506,65508,"ON"],[65509,65510,"ET"],[65512,65518,"ON"],[65520,65528,"BN"],[65529,65533,"ON"],[65534,65535,"BN"],[65793,65793,"ON"],[65856,65932,"ON"],[65936,65948,"ON"],[65952,65952,"ON"],[66045,66045,"NSM"],[66272,66272,"NSM"],[66273,66299,"EN"],[66422,66426,"NSM"],[67584,67870,"R"],[67871,67871,"ON"],[67872,68096,"R"],[68097,68099,"NSM"],[68100,68100,"R"],[68101,68102,"NSM"],[68103,68107,"R"],[68108,68111,"NSM"],[68112,68151,"R"],[68152,68154,"NSM"],[68155,68158,"R"],[68159,68159,"NSM"],[68160,68324,"R"],[68325,68326,"NSM"],[68327,68408,"R"],[68409,68415,"ON"],[68416,68863,"R"],[68864,68899,"AL"],[68900,68903,"NSM"],[68904,68911,"AL"],[68912,68921,"AN"],[68922,68927,"AL"],[68928,68937,"AN"],[68938,68968,"R"],[68969,68973,"NSM"],[68974,68974,"ON"],[68975,69215,"R"],[69216,69246,"AN"],[69247,69290,"R"],[69291,69292,"NSM"],[69293,69311,"R"],[69312,69327,"AL"],[69328,69336,"ON"],[69337,69369,"AL"],[69370,69375,"NSM"],[69376,69423,"R"],[69424,69445,"AL"],[69446,69456,"NSM"],[69457,69487,"AL"],[69488,69505,"R"],[69506,69509,"NSM"],[69510,69631,"R"],[69633,69633,"NSM"],[69688,69702,"NSM"],[69714,69733,"ON"],[69744,69744,"NSM"],[69747,69748,"NSM"],[69759,69761,"NSM"],[69811,69814,"NSM"],[69817,69818,"NSM"],[69826,69826,"NSM"],[69888,69890,"NSM"],[69927,69931,"NSM"],[69933,69940,"NSM"],[70003,70003,"NSM"],[70016,70017,"NSM"],[70070,70078,"NSM"],[70089,70092,"NSM"],[70095,70095,"NSM"],[70191,70193,"NSM"],[70196,70196,"NSM"],[70198,70199,"NSM"],[70206,70206,"NSM"],[70209,70209,"NSM"],[70367,70367,"NSM"],[70371,70378,"NSM"],[70400,70401,"NSM"],[70459,70460,"NSM"],[70464,70464,"NSM"],[70502,70508,"NSM"],[70512,70516,"NSM"],[70587,70592,"NSM"],[70606,70606,"NSM"],[70608,70608,"NSM"],[70610,70610,"NSM"],[70625,70626,"NSM"],[70712,70719,"NSM"],[70722,70724,"NSM"],[70726,70726,"NSM"],[70750,70750,"NSM"],[70835,70840,"NSM"],[70842,70842,"NSM"],[70847,70848,"NSM"],[70850,70851,"NSM"],[71090,71093,"NSM"],[71100,71101,"NSM"],[71103,71104,"NSM"],[71132,71133,"NSM"],[71219,71226,"NSM"],[71229,71229,"NSM"],[71231,71232,"NSM"],[71264,71276,"ON"],[71339,71339,"NSM"],[71341,71341,"NSM"],[71344,71349,"NSM"],[71351,71351,"NSM"],[71453,71453,"NSM"],[71455,71455,"NSM"],[71458,71461,"NSM"],[71463,71467,"NSM"],[71727,71735,"NSM"],[71737,71738,"NSM"],[71995,71996,"NSM"],[71998,71998,"NSM"],[72003,72003,"NSM"],[72148,72151,"NSM"],[72154,72155,"NSM"],[72160,72160,"NSM"],[72193,72198,"NSM"],[72201,72202,"NSM"],[72243,72248,"NSM"],[72251,72254,"NSM"],[72263,72263,"NSM"],[72273,72278,"NSM"],[72281,72283,"NSM"],[72330,72342,"NSM"],[72344,72345,"NSM"],[72544,72544,"NSM"],[72546,72548,"NSM"],[72550,72550,"NSM"],[72752,72758,"NSM"],[72760,72765,"NSM"],[72850,72871,"NSM"],[72874,72880,"NSM"],[72882,72883,"NSM"],[72885,72886,"NSM"],[73009,73014,"NSM"],[73018,73018,"NSM"],[73020,73021,"NSM"],[73023,73029,"NSM"],[73031,73031,"NSM"],[73104,73105,"NSM"],[73109,73109,"NSM"],[73111,73111,"NSM"],[73459,73460,"NSM"],[73472,73473,"NSM"],[73526,73530,"NSM"],[73536,73536,"NSM"],[73538,73538,"NSM"],[73562,73562,"NSM"],[73685,73692,"ON"],[73693,73696,"ET"],[73697,73713,"ON"],[78912,78912,"NSM"],[78919,78933,"NSM"],[90398,90409,"NSM"],[90413,90415,"NSM"],[92912,92916,"NSM"],[92976,92982,"NSM"],[94031,94031,"NSM"],[94095,94098,"NSM"],[94178,94178,"ON"],[94180,94180,"NSM"],[113821,113822,"NSM"],[113824,113827,"BN"],[117760,117973,"ON"],[118e3,118009,"EN"],[118010,118012,"ON"],[118016,118451,"ON"],[118458,118480,"ON"],[118496,118512,"ON"],[118528,118573,"NSM"],[118576,118598,"NSM"],[119143,119145,"NSM"],[119155,119162,"BN"],[119163,119170,"NSM"],[119173,119179,"NSM"],[119210,119213,"NSM"],[119273,119274,"ON"],[119296,119361,"ON"],[119362,119364,"NSM"],[119365,119365,"ON"],[119552,119638,"ON"],[120513,120513,"ON"],[120539,120539,"ON"],[120571,120571,"ON"],[120597,120597,"ON"],[120629,120629,"ON"],[120655,120655,"ON"],[120687,120687,"ON"],[120713,120713,"ON"],[120745,120745,"ON"],[120771,120771,"ON"],[120782,120831,"EN"],[121344,121398,"NSM"],[121403,121452,"NSM"],[121461,121461,"NSM"],[121476,121476,"NSM"],[121499,121503,"NSM"],[121505,121519,"NSM"],[122880,122886,"NSM"],[122888,122904,"NSM"],[122907,122913,"NSM"],[122915,122916,"NSM"],[122918,122922,"NSM"],[123023,123023,"NSM"],[123184,123190,"NSM"],[123566,123566,"NSM"],[123628,123631,"NSM"],[123647,123647,"ET"],[124140,124143,"NSM"],[124398,124399,"NSM"],[124643,124643,"NSM"],[124646,124646,"NSM"],[124654,124655,"NSM"],[124661,124661,"NSM"],[124928,125135,"R"],[125136,125142,"NSM"],[125143,125251,"R"],[125252,125258,"NSM"],[125259,126063,"R"],[126064,126143,"AL"],[126144,126207,"R"],[126208,126287,"AL"],[126288,126463,"R"],[126464,126703,"AL"],[126704,126705,"ON"],[126706,126719,"AL"],[126720,126975,"R"],[126976,127019,"ON"],[127024,127123,"ON"],[127136,127150,"ON"],[127153,127167,"ON"],[127169,127183,"ON"],[127185,127221,"ON"],[127232,127242,"EN"],[127243,127247,"ON"],[127279,127279,"ON"],[127338,127343,"ON"],[127405,127405,"ON"],[127584,127589,"ON"],[127744,128728,"ON"],[128732,128748,"ON"],[128752,128764,"ON"],[128768,128985,"ON"],[128992,129003,"ON"],[129008,129008,"ON"],[129024,129035,"ON"],[129040,129095,"ON"],[129104,129113,"ON"],[129120,129159,"ON"],[129168,129197,"ON"],[129200,129211,"ON"],[129216,129217,"ON"],[129232,129240,"ON"],[129280,129623,"ON"],[129632,129645,"ON"],[129648,129660,"ON"],[129664,129674,"ON"],[129678,129734,"ON"],[129736,129736,"ON"],[129741,129756,"ON"],[129759,129770,"ON"],[129775,129784,"ON"],[129792,129938,"ON"],[129940,130031,"ON"],[130032,130041,"EN"],[130042,130042,"ON"],[131070,131071,"BN"],[196606,196607,"BN"],[262142,262143,"BN"],[327678,327679,"BN"],[393214,393215,"BN"],[458750,458751,"BN"],[524286,524287,"BN"],[589822,589823,"BN"],[655358,655359,"BN"],[720894,720895,"BN"],[786430,786431,"BN"],[851966,851967,"BN"],[917502,917759,"BN"],[917760,917999,"NSM"],[918e3,921599,"BN"],[983038,983039,"BN"],[1048574,1048575,"BN"],[1114110,1114111,"BN"]];function Be(e){if(e<=255)return m0[e];let t=0,n=a0.length-1;for(;t<=n;){let x=t+n>>1,i=a0[x];if(e<i[0]){n=x-1;continue}if(e>i[1]){t=x+1;continue}return i[2]}return"L"}function Ce(e){let t=e.length;if(t===0)return null;let n=new Array(t),x=!1,i=0,r=null;for(let u=0;u<t;){let F=e.charCodeAt(u),s=F,l=1;if(F>=55296&&F<=56319&&u+1<t){let N=e.charCodeAt(u+1);N>=56320&&N<=57343&&(s=(F-55296<<10)+(N-56320)+65536,l=2)}let f=Be(s);(f==="R"||f==="AL"||f==="AN")&&(x=!0);for(let N=0;N<l;N++)n[u+N]=f;f==="B"&&(x&&(r??=new Int8Array(t),r[u]=O0(n,r,i,u)),i=u+l,x=!1),u+=l}return x&&(r??=new Int8Array(t),O0(n,r,i,t)),r}function O0(e,t,n,x){let i=0;for(let s=n;s<x;s++){let l=e[s];if(l==="L"){i=0;break}if(l==="R"||l==="AL"){i=1;break}}let r=i&1?"R":"L",u=r,F=u;for(let s=n;s<x;s++)e[s]==="NSM"?e[s]=F:F=e[s];F=u;for(let s=n;s<x;s++){let l=e[s];l==="EN"?e[s]=F==="AL"?"AN":"EN":(l==="R"||l==="L"||l==="AL")&&(F=l)}for(let s=n;s<x;s++)e[s]==="AL"&&(e[s]="R");for(let s=n+1;s<x-1;s++)e[s]==="ES"&&e[s-1]==="EN"&&e[s+1]==="EN"&&(e[s]="EN"),e[s]==="CS"&&(e[s-1]==="EN"||e[s-1]==="AN")&&e[s+1]===e[s-1]&&(e[s]=e[s-1]);for(let s=n;s<x;s++){if(e[s]!=="EN")continue;let l;for(l=s-1;l>=n&&e[l]==="ET";l--)e[l]="EN";for(l=s+1;l<x&&e[l]==="ET";l++)e[l]="EN"}for(let s=n;s<x;s++){let l=e[s];(l==="WS"||l==="ES"||l==="ET"||l==="CS")&&(e[s]="ON")}F=u;for(let s=n;s<x;s++){let l=e[s];l==="EN"?e[s]=F==="L"?"L":"EN":(l==="R"||l==="L")&&(F=l)}for(let s=n;s<x;s++){if(e[s]!=="ON")continue;let l=s+1;for(;l<x&&e[l]==="ON";)l++;let f=s>n?e[s-1]:u,N=l<x?e[l]:u,o=f!=="L"?"R":"L";if(o===(N!=="L"?"R":"L"))for(let E=s;E<l;E++)e[E]=o;s=l-1}for(let s=n;s<x;s++)e[s]==="ON"&&(e[s]=r);for(let s=n;s<x;s++){let l=e[s],f=i;(i&1)===0?l==="R"?f++:(l==="AN"||l==="EN")&&(f+=2):(l==="L"||l==="AN"||l==="EN")&&f++,t[s]=f}return i}function b0(e,t){let n=Ce(e);if(n===null)return null;let x=new Int8Array(t.length);for(let i=0;i<t.length;i++)x[i]=n[t[i]];return x}var Me=/[ \t\n\r\f]+/g,ge=/[\t\n\r\f]| {2,}|^ | $/;function De(e){if(!ge.test(e))return e;let t=e.replace(Me," ");return t.charCodeAt(0)===32&&(t=t.slice(1)),t.length>0&&t.charCodeAt(t.length-1)===32&&(t=t.slice(0,-1)),t}function pe(e){return/[\r\f]/.test(e)?e.replace(/\r\n/g,`
+`).replace(/[\r\f]/g,`
+`):e}var f0=null;function z(){return f0===null&&(f0=new Intl.Segmenter(void 0,{granularity:"grapheme"})),f0}var N0=null,Le;function ke(){return N0===null&&(N0=new Intl.Segmenter(Le,{granularity:"word"})),N0}var me=/\p{Script=Arabic}/u,U=/\p{M}/u,i0=/\p{Nd}/u;function W0(e){return me.test(e)}var Oe=/[\u3000-\u30FF\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF\u{20000}-\u{2A6DF}\u{2A700}-\u{2EE5D}\u{2F800}-\u{2FA1F}\u{30000}-\u{33479}]/u;function K(e){return Oe.test(e)}function be(e){let t=r0(e);return t!==null&&(h0.has(t)||Z.has(t))}var We=new Set(["\xA0","\u202F","\u2060","\uFEFF"]),we=new Set(["-","\u2010","\u2013","\u2014"]);function Pe(e){let t=r0(e);return t!==null&&We.has(t)}function Ie(e){let t=r0(e);return t!==null&&we.has(t)}function T0(e,t){return Pe(e)?!1:t?!(be(e)||Ie(e)):!0}var h0=new Set(["\uFF0C","\uFF0E","\uFF01","\uFF1A","\uFF1B","\uFF1F","\u3001","\u3002","\u30FB","\uFF09","\u3015","\u3009","\u300B","\u300D","\u300F","\u3011","\u3017","\u3019","\u301B","\u30FC","\u3005","\u303B","\u309D","\u309E","\u30FD","\u30FE"]),u0=new Set(['"',"(","[","{","\xA1","\xBF","\u201C","\u2018","\u201A","\u201E","\xAB","\u2039","\u2E18","\uFF08","\u3014","\u3008","\u300A","\u300C","\u300E","\u3010","\u3016","\u3018","\u301A"]),d0=new Set(["'","\u2019"]),Z=new Set([".",",","!","?",":",";","\u060C","\u061B","\u061F","\u0964","\u0965","\u104A","\u104B","\u104C","\u104D","\u104F",")","]","}","%",'"',"\u201D","\u2019","\xBB","\u203A","\u2026"]),Re=new Set([":",".","\u060C","\u061B"]),ve=new Set(["\u104F"]),Te=new Set(["\u201D","\u2019","\xBB","\u203A","\u300D","\u300F","\u3011","\u300B","\u3009","\u3015","\uFF09"]);function ye(e){if(B0(e))return!0;let t=!1;for(let n of e){if(Z.has(n)||V(n)){t=!0;continue}if(!(t&&U.test(n)))return!1}return t}function Ge(e){for(let t of e)if(!h0.has(t)&&!Z.has(t))return!1;return e.length>0}function Ke(e){if(B0(e))return!0;for(let t of e)if(!u0.has(t)&&!d0.has(t)&&!U.test(t)&&!V(t))return!1;return e.length>0}function B0(e){let t=!1;for(let n of e)if(!(n==="\\"||U.test(n))){if(u0.has(n)||Z.has(n)||d0.has(n)){t=!0;continue}return!1}return t}function Y(e,t){let n=t-1;if(n<=0)return Math.max(n,0);let x=e.charCodeAt(n);if(x<56320||x>57343)return n;let i=n-1;if(i<0)return n;let r=e.charCodeAt(i);return r>=55296&&r<=56319?i:n}function r0(e){if(e.length===0)return null;let t=Y(e,e.length);return e.slice(t)}function je(e){for(let t of e)if(!U.test(t))return t;return null}function C0(e,t=e.length){for(;t>0;){let n=Y(e,t),x=e.slice(n,t);if(!U.test(x))return x;t=n}return null}var Je=[36,37,43,43,92,92,162,165,176,177,1423,1423,1545,1547,1642,1642,2046,2047,2546,2547,2553,2555,2801,2801,3065,3065,3449,3449,3647,3647,6107,6107,8240,8247,8279,8279,8352,8399,8451,8451,8457,8457,8470,8470,8722,8723,43064,43064,65020,65020,65129,65130,65284,65285,65504,65505,65509,65510,73693,73696,123647,123647,126124,126124,126128,126128];function ze(e,t){for(let n=0;n<t.length;n+=2)if(e>=t[n]&&e<=t[n+1])return!0;return!1}function V(e){let t=e.codePointAt(0);return t!==void 0&&ze(t,Je)}function He(e){let t=C0(e);return t!==null&&V(t)}function Ue(e){let t=je(e);return t!==null&&i0.test(t)}function _e(e){let t=e.length;for(;t>0;){let n=Y(e,t),x=e.slice(n,t);if(U.test(x)||u0.has(x)||d0.has(x)){t=n;continue}break}return t<=0||t===e.length?null:{head:e.slice(0,t),tail:e.slice(t)}}function Qe(e,t,n){return n==="text"&&!t&&e.length===1&&e!=="-"&&e!=="\u2014"?e:null}function w0(e,t){return e&&t!==null&&Re.has(t)}function $e(e){let t=r0(e);return t!==null&&ve.has(t)}function qe(e){if(e.length<2||e[0]!==" ")return null;let t=e.slice(1);return/^\p{M}+$/u.test(t)?{space:" ",marks:t}:null}function A0(e){let t=e.length;for(;t>0;){let n=Y(e,t),x=e.slice(n,t);if(Te.has(x))return!0;if(!Z.has(x))return!1;t=n}return!1}function Ze(e,t){if(t==="pre-wrap"){if(e===" ")return"preserved-space";if(e==="	")return"tab";if(e===`
+`)return"hard-break"}return e===" "?"space":e==="\xA0"||e==="\u202F"||e==="\u2060"||e==="\uFEFF"?"glue":e==="\u200B"?"zero-width-break":e==="\xAD"?"soft-hyphen":"text"}var Ve=/[\x20\t\n\xA0\xAD\u200B\u202F\u2060\uFEFF]/;function Q(e){return e.length===1?e[0]:e.join("")}function P0(e,t){let n=[];for(let x=e.length-1;x>=0;x--)n.push(e[x]);return n.push(t),Q(n)}function Xe(e,t,n,x){if(!Ve.test(e))return[{text:e,isWordLike:t,kind:"text",start:n}];let i=[],r=null,u=0,F=!1,s=0;for(let l of e){let f=Ze(l,x),N=f==="text"&&t;if(r!==null&&f===r&&N===F){s+=l.length;continue}r!==null&&i.push({text:e.slice(u,s),isWordLike:F,kind:r,start:n+u}),r=f,u=s,F=N,s+=l.length}return r!==null&&i.push({text:e.slice(u),isWordLike:F,kind:r,start:n+u}),i}function S0(e){return e==="space"||e==="preserved-space"||e==="zero-width-break"||e==="hard-break"}var Ye=/^[A-Za-z][A-Za-z0-9+.-]*:$/;function I0(e,t){let n=e.texts[t];return n.startsWith("www.")?!0:Ye.test(n)&&t+1<e.len&&e.kinds[t+1]==="text"&&e.texts[t+1]==="//"}function et(e){return e.includes("?")&&(e.includes("://")||e.startsWith("www."))}function tt(e,t,n){let x=[],i=[],r=[],u=[];for(let F=0;F<e.len;F++){let s=e.starts[F],l=e.texts[F],f=e.isWordLike[F],N=e.kinds[F],o=-1;if(N==="text"&&I0(e,F)){let L=[l],D=F+1;for(;D<e.len&&!S0(e.kinds[D])&&H(t,e.starts[D],n)!==!1;){o<0&&I0(e,D)&&(o=e.starts[D]);let m=e.texts[D];if(L.push(m),f=!0,D++,m.includes("?"))break}l=Q(L),F=D-1}if(x.push(l),i.push(f),r.push(N),u.push(s),!et(l))continue;let a=F+1;if(a>=e.len||S0(e.kinds[a]))continue;let E=[],d=o<0?e.starts[a]:o,A=a;for(;A<e.len&&!S0(e.kinds[A])&&H(t,e.starts[A],n)!==!1;)E.push(e.texts[A]),A++;E.length>0&&(x.push(Q(E)),i.push(!0),r.push("text"),u.push(d),F=A-1)}return{len:x.length,texts:x,isWordLike:i,kinds:r,starts:u}}var nt=new Set([":","-","/","\xD7",",",".","+","\u2013","\u2014"]),xt=/[\p{P}\p{S}\p{Co}]/u,y0=/\p{Emoji_Presentation}/u,it=new Set(["?","\u058A","-","\u2010","\u2012","\u2013","\u2014","\u2026","\u203C","\u203D","\u2049"]);function rt(e){return e>=33&&e<=47&&e!==45||e>=58&&e<=64&&e!==63||e>=91&&e<=96||e>=123&&e<=126}function G0(e){let t=e.charCodeAt(0);return t<128?rt(t):!it.has(e)&&!y0.test(e)&&xt.test(e)}function R0(e){let t=!1;for(let n of e)if(!U.test(n)){if(!G0(n))return!1;t=!0}return t}function st(e){for(let t=e.length;t>0;){let n=Y(e,t),x=e.slice(n,t);if(U.test(x)){t=n;continue}return G0(x)||V(x)}return!1}var E0=/[A-Za-z#&*<=>@^_`~]/;function K0(e,t){return e.charCodeAt(0)<128&&t.charCodeAt(0)<128}function H(e,t,n){if(!n.geckoAsciiLineBreaks||t<=0||t>=e.length)return null;let x=C0(e,t),i=String.fromCodePoint(e.codePointAt(t));if(x===null||!K0(x,i))return null;let r=V(x),u=V(i);return!r&&!u?null:!!(i===")"||i==="]"||i==="}"||"!,.:;?/".includes(i)||"([{".includes(x)||x==='"'||x==="'"||i==='"'||i==="'"||i==="|"||i==="-"||r&&E0.test(i)||E0.test(x)&&u||u&&(")]}".includes(x)||/[0-9]/.test(x))||r&&("([{".includes(i)||/[0-9]/.test(i)))}function s0(e,t,n,x=e.length){let i=t[0];if(i===void 0||!"([{".includes(i))return null;let r=C0(e,x);return r===null?null:n.geckoAsciiLineBreaks&&K0(r,i)?E0.test(r)||i0.test(r)||`"'([{`.includes(r)||V(r):r.charCodeAt(0)>=128?!K(r)&&/[\p{L}\p{N}]/u.test(r)?!0:null:/[A-Za-z0-9]/.test(r)||"$'(/<@[^_`{".includes(r)}function ut(e,t,n,x,i){if(n[0]==="-"&&K(e))return!0;if(K(e)||K(n))return!1;let r=s0(e,n,i);if(r!==null)return r;let u=!t&&R0(e),F=!x&&R0(n),s=He(e),l=(t||s)&&st(e);return!u&&!F&&!l?!1:(t||u||s)&&(x||F)}function v0(e){for(let t of e)if(i0.test(t))return!0;return!1}function x0(e){if(e.length===0)return!1;for(let t of e)if(!(i0.test(t)||nt.has(t)))return!1;return!0}function lt(e,t,n){let x=[],i=[],r=[],u=[];function F(s,l){if(s.includes("-")){let f=s.split("-"),N=f.length>1;for(let o=0;o<f.length;o++){let a=f[o];if(!N)break;(a.length===0||!v0(a)||!x0(a))&&(N=!1)}if(N){let o=0;for(let a=0;a<f.length;a++){let E=f[a],d=a<f.length-1?`${E}-`:E;x.push(d),i.push(!0),r.push("text"),u.push(l+o),o+=d.length}return}}x.push(s),i.push(!0),r.push("text"),u.push(l)}for(let s=0;s<e.len;s++){let l=e.texts[s],f=e.kinds[s];if(f==="text"&&x0(l)&&v0(l)){let N=[l],o=s+1;for(;o<e.len&&e.kinds[o]==="text"&&x0(e.texts[o])&&H(t,e.starts[o],n)!==!1;)N.push(e.texts[o]),o++;F(Q(N),e.starts[s]),s=o-1;continue}x.push(l),i.push(e.isWordLike[s]),r.push(f),u.push(e.starts[s])}return{len:x.length,texts:x,isWordLike:i,kinds:r,starts:u}}function ot(e,t,n){let x=[],i=[],r=[],u=[],F=0;for(;F<e.len;){let s=e.texts[F],l=e.kinds[F],f=e.isWordLike[F];if(l==="text"){let N=[s],o=F+1,a=f;for(;o<e.len&&e.kinds[o]==="text"&&(H(t,e.starts[o],n)??ut(e.texts[o-1],e.isWordLike[o-1],e.texts[o],e.isWordLike[o],n));){let E=e.texts[o];N.push(E),a=a||e.isWordLike[o],o++}if(o>F+1){x.push(Q(N)),i.push(a),r.push("text"),u.push(e.starts[F]),F=o;continue}}x.push(s),i.push(f),r.push(l),u.push(e.starts[F]),F++}return{len:x.length,texts:x,isWordLike:i,kinds:r,starts:u}}function Ft(e){let t=[],n=[],x=[],i=[],r=0;for(;r<e.len;){let u=[e.texts[r]],F=e.isWordLike[r],s=e.kinds[r],l=e.starts[r];if(s==="glue"){let f=[u[0]],N=l;for(r++;r<e.len&&e.kinds[r]==="glue";)f.push(e.texts[r]),r++;let o=Q(f);if(r<e.len&&e.kinds[r]==="text")u[0]=o,u.push(e.texts[r]),F=e.isWordLike[r],s="text",l=N,r++;else{t.push(o),n.push(!1),x.push("glue"),i.push(N);continue}}else r++;if(s==="text")for(;r<e.len&&e.kinds[r]==="glue";){let f=[];for(;r<e.len&&e.kinds[r]==="glue";)f.push(e.texts[r]),r++;let N=Q(f);if(r<e.len&&e.kinds[r]==="text"){u.push(N,e.texts[r]),F=F||e.isWordLike[r],r++;continue}u.push(N)}t.push(Q(u)),n.push(F),x.push(s),i.push(l)}return{len:t.length,texts:t,isWordLike:n,kinds:x,starts:i}}function ct(e){let{texts:t,kinds:n,starts:x}=e;for(let i=0;i<t.length-1;i++){if(n[i]!=="text"||n[i+1]!=="text"||!K(t[i])||!K(t[i+1]))continue;let r=_e(t[i]);r!==null&&(t[i]=r.head,t[i+1]=r.tail+t[i+1],x[i+1]=x[i]+r.head.length)}}function at(e,t,n){let x=ke(),i=0,r=[],u=[],F=[],s=[],l=!1,f=0,N=0,o=!1,a="text",E=null,d=!1,A=!1,L=!1,D=!1,m=!1;for(let c of x.segment(e))for(let S of Xe(c.segment,c.isWordLike??!1,c.index,n)){let B=S.kind==="text",p=Qe(S.text,S.isWordLike,S.kind),g=K(S.text),I=W0(S.text),P=r0(S.text),v=A0(S.text),h=$e(S.text),M=S.start+S.text.length,C=H(e,S.start,t)??(d||g?null:s0(e,S.text,t,S.start)),w=!1;if(t.carryCJKAfterClosingQuote&&B&&l&&a==="text"&&g&&d&&L)w=!0;else if(B&&l&&a==="text"&&Ge(S.text)&&d)w=!0;else if(B&&l&&a==="text"&&D)w=!0;else if(B&&l&&a==="text"&&S.isWordLike&&I&&m)w=!0;else if(p!==null&&l&&a==="text"&&E===p&&C!==!1){N=M;continue}else B&&!S.isWordLike&&l&&a==="text"&&!d&&(ye(S.text)||S.text==="-"&&o)&&(w=!0);B&&l&&a==="text"&&C!==null&&(w=C),w?(N=M,o=o||S.isWordLike,E=null,d=d||g,A=A||I,L=v,D=h,m=w0(A,P)):(l&&(r[i]=e.slice(f,N),u[i]=o,F[i]=a,s[i]=f,i++),l=!0,f=S.start,N=M,o=S.isWordLike,a=S.kind,E=p,d=g,A=I,L=v,D=h,m=w0(I,P))}l&&(r[i]=e.slice(f,N),u[i]=o,F[i]=a,s[i]=f,i++);for(let c=1;c<i;c++)F[c]==="text"&&!u[c]&&B0(r[c])&&F[c-1]==="text"&&!K(r[c-1])&&(H(e,s[c],t)??s0(e,r[c],t,s[c]))!==!1&&(r[c-1]+=r[c],u[c-1]=u[c-1]||u[c],r[c]="");let k=-1,W=null;for(let c=i-1;c>=0;c--){let S=r[c];if(S.length===0)continue;let B=W?.at(-1)??(k>=0?r[k]:null);if(F[c]==="text"&&!u[c]&&B!==null&&F[k]==="text"&&((H(e,s[c]+S.length,t)??(Ke(S)&&s0(S,B,t)!==!1))||S==="-"&&Ue(B))){W===null&&(W=[]),W.push(S),s[k]=s[c],r[c]="";continue}W!==null&&(r[k]=P0(W,r[k]),W=null),k=c}W!==null&&(r[k]=P0(W,r[k]));let b=0;for(let c=0;c<i;c++){let S=r[c];S.length!==0&&(b!==c&&(r[b]=S,u[b]=u[c],F[b]=F[c],s[b]=s[c]),b++)}r.length=b,u.length=b,F.length=b,s.length=b;let R=Ft({len:b,texts:r,isWordLike:u,kinds:F,starts:s}),O=ot(lt(tt(R,e,t),e,t),e,t);ct(O);for(let c=0;c<O.len-1;c++){let S=qe(O.texts[c]);S!==null&&(O.kinds[c]!=="space"&&O.kinds[c]!=="preserved-space"||O.kinds[c+1]!=="text"||!W0(O.texts[c+1])||(O.texts[c]=S.space,O.isWordLike[c]=!1,O.kinds[c]=O.kinds[c]==="preserved-space"?"preserved-space":"space",O.texts[c+1]=S.marks+O.texts[c+1],O.starts[c+1]=O.starts[c]+S.space.length))}return O}function ft(e,t,n){if(t.len<=1)return t;let x=[],i=[],r=[],u=[],F=-1,s=!1;function l(o){x.push(t.texts[o]),i.push(t.isWordLike[o]),r.push("text"),u.push(t.starts[o])}function f(o,a){let E=!1;for(let L=o;L<a;L++)E=E||t.isWordLike[L];let d=t.starts[o],A=a<t.len?t.starts[a]:e.length;x.push(e.slice(d,A)),i.push(E),r.push("text"),u.push(d)}function N(o){if(!(F<0)){if(s)F+1===o?l(F):f(F,o);else for(let a=F;a<o;a++)l(a);F=-1,s=!1}}for(let o=0;o<t.len;o++){let a=t.texts[o],E=t.kinds[o];if(E==="text"){F>=0&&(!T0(t.texts[o-1],n.breakKeepAllAfterPunctuation)||H(e,t.starts[o],n)===!1)&&N(o),F<0&&(F=o),s=s||K(a);continue}N(o),x.push(a),i.push(t.isWordLike[o]),r.push(E),u.push(t.starts[o])}return N(t.len),{len:x.length,texts:x,isWordLike:i,kinds:r,starts:u}}function j0(e,t){let n=e.charCodeAt(t+1);if(n<128){if(n<48||n>57)return!1}else{let x=e.codePointAt(t+1);if(x===void 0||!i0.test(String.fromCodePoint(x)))return!1}for(let x=t;x>0;){let i=Y(e,x),r=e.slice(i,x);if(!U.test(r))return K(r)||!/[\p{L}\p{N}]/u.test(r);x=i}return!0}function Nt(e,t){let n=[],x=0,i=0,r=!1,u=!1,F=!1,s=!1,l=!1;function f(){i!==x&&(n.push({text:e.slice(x,i),start:x,overflow:r?s?"grapheme":"none":"word-like"}),x=i,r=!1,u=!1,F=!1,s=!1,l=!1)}function N(a,E,d){x=E,i=E+a.length,r=d,s=a==="-",u=A0(a),F=u0.has(a)}function o(a,E){i+=a.length,r=r||E,s=s||a==="-";let d=A0(a);a.length===1&&Z.has(a)?u=u||d:u=d,F=!1}for(let a of z().segment(e)){let E=a.segment,d=K(E);if(i===x){N(E,a.index,d);continue}let A=E==="-"&&r;if(A&&j0(e,a.index)&&(l=!0),F||h0.has(E)||Z.has(E)||A||l&&!d||t.carryCJKAfterClosingQuote&&d&&u){o(E,d);continue}if(!r&&!d){o(E,d);continue}f(),N(E,a.index,d)}return f(),n}function St(e,t,n){if(t.length<=1)return t;let x=[],i=-1,r=!1;function u(s,l){let f=t[s].start,N=l<t.length?t[l].start:e.length;x.push({text:e.slice(f,N),start:f,overflow:"word-like"})}function F(s){if(!(i<0)){if(r)i+1===s?x.push(t[i]):u(i,s);else for(let l=i;l<s;l++)x.push(t[l]);i=-1,r=!1}}for(let s=0;s<t.length;s++){let l=t[s];i>=0&&(!T0(t[s-1].text,n.breakKeepAllAfterPunctuation)||H(e,l.start,n)===!1)&&F(s),i<0&&(i=s),r=r||K(l.text)}return F(t.length),x}function J0(e,t,n){let x=Nt(e,t);return n==="keep-all"?St(e,x,t):x}function At(e){return e==="-"||e==="\u058A"||e==="\u2010"||e==="\u2012"||e==="\u2013"||e==="\u2014"}function z0(e){if(e.length===0||/\p{Cf}/u.test(e))return!1;for(let{segment:t}of z().segment(e)){let n=String.fromCodePoint(t.codePointAt(0));if(!/[\p{P}\p{S}]/u.test(n)||y0.test(n)||t.includes("\uFE0F")||/\p{Emoji_Modifier}/u.test(n))return!1}return!0}function H0(e){if(!/[-\u058A\u2010\u2012\u2013\u2014]/u.test(e))return null;let t=[],n=0;for(let x of z().segment(e)){n++;let i=x.segment==="-"&&j0(e,x.index);At(x.segment)&&!i&&t.push(n)}return t.length===0?null:t}function U0(e,t,n="normal",x="normal"){let i=n==="pre-wrap"?pe(e):De(e);if(i.length===0)return{normalized:i,len:0,texts:[],isWordLike:[],kinds:[],starts:[]};let r=at(i,t,n),u=x==="keep-all"?ft(i,r,t):r;return{normalized:i,...u}}var e0=null,_0=new Map,t0=null,Et=96,ht=/\p{Emoji_Presentation}/u,dt=/[\p{Emoji_Presentation}\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3]/u,Q0=new Map;function M0(){if(e0!==null)return e0;if(typeof OffscreenCanvas<"u")return e0=new OffscreenCanvas(1,1).getContext("2d"),e0;if(typeof document<"u")return e0=document.createElement("canvas").getContext("2d"),e0;throw new Error("Text measurement requires OffscreenCanvas or a DOM canvas context.")}function Bt(e){let t=_0.get(e);return t||(t=new Map,_0.set(e,t)),t}function _(e,t){let n=t.get(e);return n===void 0&&(n={width:M0().measureText(e).width},t.set(e,n)),n}function X(){if(t0!==null)return t0;if(typeof navigator>"u")return t0={geckoAsciiLineBreaks:!1,lineFitEpsilon:.005,carryCJKAfterClosingQuote:!1,breakKeepAllAfterPunctuation:!0,preferPrefixWidthsForBreakableRuns:!1},t0;let e=navigator.userAgent,n=navigator.vendor==="Apple Computer, Inc."&&e.includes("Safari/")&&!e.includes("Chrome/")&&!e.includes("Chromium/")&&!e.includes("CriOS/")&&!e.includes("FxiOS/")&&!e.includes("EdgiOS/"),x=e.includes("Chrome/")||e.includes("Chromium/")||e.includes("CriOS/")||e.includes("Edg/");return t0={geckoAsciiLineBreaks:e.includes("Firefox/")&&!e.includes("FxiOS/"),lineFitEpsilon:n?1/64:.005,carryCJKAfterClosingQuote:x,breakKeepAllAfterPunctuation:!n,preferPrefixWidthsForBreakableRuns:n},t0}function Ct(e){let t=e.match(/(?:^|\D)(\d+(?:\.\d+)?)\s*px/);return t?parseFloat(t[1]):16}function Mt(e){return ht.test(e)||e.includes("\uFE0F")}function $0(e){return dt.test(e)}function gt(e){let t=Q0.get(e);if(t!==void 0)return t;let n=Ct(e),x=M0();x.font=e;let i=x.measureText("\u{1F600}").width;if(t=0,i>n+.5&&typeof document<"u"&&document.body!==null){let r=document.createElement("span");r.style.font=e,r.style.display="inline-block",r.style.visibility="hidden",r.style.position="absolute",r.textContent="\u{1F600}",document.body.appendChild(r);let u=r.getBoundingClientRect().width;document.body.removeChild(r),i-u>.5&&(t=i-u)}return Q0.set(e,t),t}function Dt(e){let t=0,n=z();for(let x of n.segment(e))Mt(x.segment)&&t++;return t}function pt(e,t){return t.emojiCount===void 0&&(t.emojiCount=Dt(e)),t.emojiCount}function $(e,t,n){return n===0?t.width:t.width-pt(e,t)*n}function q0(e,t,n,x,i){if(t.breakableFitAdvances!==void 0&&t.breakableFitMode===i)return t.breakableFitAdvances;t.breakableFitMode=i;let r=z(),u=[];for(let f of r.segment(e))u.push(f.segment);if(u.length<=1)return t.breakableFitAdvances=null,t.breakableFitAdvances;if(i==="sum-graphemes"){let f=[];for(let N of u){let o=_(N,n);f.push($(N,o,x))}return t.breakableFitAdvances=f,t.breakableFitAdvances}if(i==="pair-context"||u.length>Et){let f=[],N=null,o=0;for(let a of u){let E=_(a,n),d=$(a,E,x);if(N===null)f.push(d);else{let A=N+a,L=_(A,n);f.push($(A,L,x)-o)}N=a,o=d}return t.breakableFitAdvances=f,t.breakableFitAdvances}let F=[],s="",l=0;for(let f of u){s+=f;let N=_(s,n),o=$(s,N,x);F.push(o-l),l=o}return t.breakableFitAdvances=F,t.breakableFitAdvances}function Z0(e,t){let n=M0();n.font=e;let x=Bt(e),i=t?gt(e):0;return{cache:x,emojiCorrection:i}}function g0(e,t,n){return n===0&&t>0&&t<e.length&&e[t-1]==="soft-hyphen"}function Lt(e){return e==="space"||e==="zero-width-break"||e==="soft-hyphen"}function D0(e){return e==="space"||e==="preserved-space"||e==="tab"||e==="zero-width-break"||e==="soft-hyphen"}function Y0(e,t,n=e.widths.length){for(;t<n;){let x=e.kinds[t];if(!Lt(x))break;t++}return t}function kt(e,t){if(t<=0)return 0;let n=e%t;return Math.abs(n)<=1e-6?t:t-n}function mt(e,t,n){return e.letterSpacing!==0&&t&&e.spacingGraphemeCounts[n]>0?e.letterSpacing:0}function p0(e,t){return t===0?0:e+t}function Ot(e,t){return e.letterSpacing!==0&&e.spacingGraphemeCounts[t]>0?e.letterSpacing:0}function bt(e,t,n,x,i){let r=t==="tab"?i+Ot(e,n):e.lineEndFitAdvances[n];return p0(x,r)}function V0(e,t,n,x){let i=t==="tab"?0:e.lineEndFitAdvances[n];return p0(x,i)}function X0(e,t,n,x,i){let r=t==="tab"?i:e.lineEndPaintAdvances[n];return p0(x,r)}function Wt(e,t,n){return e.letterSpacing!==0&&t?n+e.letterSpacing:n}function wt(e,t){return e.letterSpacing===0?t:t+e.letterSpacing}function l0(e,t,n){let x=t;if(x>=e.length||e[x]>=n)return x;let i=e.length;for(x++;x<i;){let r=Math.floor((x+i)/2);e[r]<n?x=r+1:i=r}return x}function Pt(e,t,n,x,i){if(e.letterSpacing===0)return 0;if(i>0)return e.spacingGraphemeCounts[x]>0?e.letterSpacing:0;if(g0(e.kinds,x,i))return 0;for(let r=x-1;r>=t;r--){let u=e.kinds[r];if(!(u==="space"||u==="zero-width-break"||u==="hard-break"||u==="soft-hyphen"))return r===t&&n>0||e.spacingGraphemeCounts[r]>0?e.letterSpacing:0}return 0}function It(e,t,n,x,i,r){return t+Pt(e,n,x,i,r)}function Rt(e,t){let n=0,x=e.chunks.length;for(;n<x;){let i=Math.floor((n+x)/2);t<e.chunks[i].consumedEndSegmentIndex?x=i:n=i+1}return n<e.chunks.length?n:-1}function ee(e,t,n){let x=n.segmentIndex;if(n.graphemeIndex>0)return t;for(let i=t;i<e.chunks.length;i++){let r=e.chunks[i];if(r.startSegmentIndex===r.endSegmentIndex&&x===r.startSegmentIndex||(x<r.startSegmentIndex&&(x=r.startSegmentIndex),x=Y0(e,x,r.endSegmentIndex),x<r.endSegmentIndex))return n.segmentIndex=x,n.graphemeIndex=0,i;if(r.consumedEndSegmentIndex>=e.widths.length)return-1;x=r.consumedEndSegmentIndex,n.segmentIndex=x,n.graphemeIndex=0}return-1}function o0(e,t){if(t.segmentIndex>=e.widths.length)return-1;let n=Rt(e,t.segmentIndex);return n<0?-1:ee(e,n,t)}function vt(e,t,n){if(n.segmentIndex>=e.widths.length)return-1;let x=t;for(;x<e.chunks.length&&n.segmentIndex>=e.chunks[x].consumedEndSegmentIndex;)x++;return x>=e.chunks.length?-1:ee(e,x,n)}function Tt(e,t,n){let{widths:x,kinds:i,breakableFitAdvances:r,breakablePreferredBreaks:u}=e;if(x.length===0)return 0;let s=X().lineFitEpsilon,l=t+s,f=0,N=0,o=!1,a=0,E=0,d=0,A=0,L=-1,D=0;function m(){L=-1,D=0}function k(S=d,B=A,p=N){f++,n?.(p,a,E,S,B),N=0,o=!1,m()}function W(S,B){o=!0,a=S,E=0,d=S+1,A=0,N=B}function b(S,B,p){o=!0,a=S,E=B,d=S,A=B+1,N=p}function R(S,B){if(!o){W(S,B);return}N+=B,d=S+1,A=0}function O(S,B){let p=r[S],g=u[S]??null,I=g===null?-1:l0(g,0,B+1),P=-1,v=0,h=B;for(;h<p.length;){let M=p[h];if(!o)b(S,h,M);else if(N+M>l){if(g!==null&&P>B){k(S,P,v),h=P,I=l0(g,I,h+1),P=-1,v=0;continue}k(),b(S,h,M)}else N+=M,d=S,A=h+1;let C=h+1;g!==null&&g[I]===C&&(P=C,v=N,I++),h++}o&&d===S&&A===p.length&&(d=S+1,A=0)}let c=0;for(;c<x.length&&!(!o&&(c=Y0(e,c),c>=x.length));){let S=x[c],B=i[c],p=D0(B);if(!o){S>l&&r[c]!==null?O(c,0):W(c,S),p&&(L=c+1,D=N-S),c++;continue}if(N+S>l){if(p){R(c,S),k(c+1,0,N-S),c++;continue}if(L>=0){if(d>L||d===L&&A>0){k();continue}k(L,0,D);continue}if(S>l&&r[c]!==null){k(),O(c,0),c++;continue}k();continue}R(c,S),p&&(L=c+1,D=N-S),c++}return o&&k(),f}function F0(e,t,n){if(e.simpleLineWalkFastPath)return Tt(e,t,n);let x={segmentIndex:0,graphemeIndex:0},i=o0(e,x);return L0(e,x,i,t,n).lineCount}function yt(e,t,n,x){return L0(e,t,n,x,void 0,1).lastLineWidth}function L0(e,t,n,x,i,r=Number.POSITIVE_INFINITY){let{widths:u,kinds:F,breakableFitAdvances:s,breakablePreferredBreaks:l,discretionaryHyphenWidth:f}=e,o=X().lineFitEpsilon,a=x+o,E,d,A,L,D,m,k,W,b,R;function O(){return R==="soft-hyphen"&&k===D&&m===0?b:A}function c(h=D,M=m,C=O()){return L?(t.segmentIndex=h,t.graphemeIndex=M,It(e,C,E,d,h,M)):null}function S(h,M){L=!0,D=h+1,m=0,A=M}function B(h,M,C){L=!0,D=h,m=M+1,A=C}function p(h,M){if(!L){S(h,M);return}A+=M,D=h+1,m=0}function g(h,M,C,w,y,j){if(!M)return;let G=V0(e,h,C,y),T=X0(e,h,C,y,w);k=C+1,W=A-j+G,b=A-j+T,R=h}function I(h,M){let C=s[h],w=l[h]??null,y=w===null?-1:l0(w,0,M+1),j=-1,G=0;for(let T=M;T<C.length;T++){let q=C[T];if(!L)B(h,T,q);else{let k0=Wt(e,!0,q),J=A+k0;if(wt(e,J)>a)return w!==null&&j>M?c(h,j,G):c();A=J,D=h,m=T+1}let n0=T+1;w!==null&&w[y]===n0&&(j=n0,G=A,y++)}return L&&D===h&&m===C.length&&(D=h+1,m=0),null}let P=0,v=null;for(;n>=0&&P<r;){E=t.segmentIndex,d=t.graphemeIndex,A=0,L=!1,D=t.segmentIndex,m=t.graphemeIndex,k=-1,W=0,b=0,R=null;let h=e.chunks[n],M=null;if(h.startSegmentIndex===h.endSegmentIndex)t.segmentIndex=h.consumedEndSegmentIndex,t.graphemeIndex=0,M=0;else{e:for(let C=t.segmentIndex;C<h.endSegmentIndex;C++){let w=F[C],y=D0(w),j=C===t.segmentIndex?t.graphemeIndex:0,G=mt(e,L,C),T=w==="tab"?kt(A+G,e.tabStopAdvance):u[C],q=G+T,n0=bt(e,w,C,G,T);if(w==="soft-hyphen"&&j===0){L&&(D=C+1,m=0,C+1<h.endSegmentIndex&&(k=C+1,W=A+f,b=A+f,R=w));continue}if(!L){if(j>0){let J=I(C,j);if(J!==null){M=J;break e}}else if(n0>a&&s[C]!==null){let J=I(C,0);if(J!==null){M=J;break e}}else S(C,T);g(w,y,C,T,G,q);continue}if(A+n0>a){let J=A+V0(e,w,C,G),fe=A+X0(e,w,C,G,T);if(y&&J<=a){p(C,q),M=c(C+1,0,fe);break e}if(k>=0&&W<=a){if(D>k||D===k&&m>0){M=c();break e}M=c(k,0,b);break e}M=c();break e}p(C,q),g(w,y,C,T,G,q)}M===null&&(M=k===h.consumedEndSegmentIndex&&m===0?c(h.consumedEndSegmentIndex,0,b):c(h.consumedEndSegmentIndex,0,A))}if(M===null)break;v=M,P++,i?.(M,E,d,t.segmentIndex,t.graphemeIndex),P<r&&(n=vt(e,n,t))}return{lineCount:P,lastLineWidth:v}}function Gt(e,t,n){let{widths:x,kinds:i,breakableFitAdvances:r,breakablePreferredBreaks:u}=e,s=X().lineFitEpsilon,l=n+s,f=0,N=!1,o=t.segmentIndex,a=t.graphemeIndex,E=-1,d=0;for(let A=t.segmentIndex;A<x.length;A++){let L=i[A],D=D0(L),m=A===t.segmentIndex?t.graphemeIndex:0,k=r[A],W=x[A];if(!N){if(m>0||W>l&&k!==null){let b=k,R=u[A]??null,O=R===null?-1:l0(R,0,m+1),c=-1,S=0,B=b[m];N=!0,f=B,o=A,a=m+1,R!==null&&R[O]===a&&(c=a,S=f,O++);for(let p=m+1;p<b.length;p++){let g=b[p];if(f+g>l)return R!==null&&c>m?(t.segmentIndex=A,t.graphemeIndex=c,S):(t.segmentIndex=o,t.graphemeIndex=a,f);f+=g,o=A,a=p+1,R!==null&&R[O]===a&&(c=a,S=f,O++)}o===A&&a===b.length&&(o=A+1,a=0)}else N=!0,f=W,o=A+1,a=0;D&&(E=A+1,d=f-W);continue}if(f+W>l)return D?(t.segmentIndex=A+1,t.graphemeIndex=0,f):E>=0?o>E||o===E&&a>0?(t.segmentIndex=o,t.graphemeIndex=a,f):(t.segmentIndex=E,t.graphemeIndex=0,d):(t.segmentIndex=o,t.graphemeIndex=a,f);f+=W,o=A+1,a=0,D&&(E=A+1,d=f-W)}return N?(t.segmentIndex=o,t.graphemeIndex=a,f):null}function te(e,t,n,x){return e.simpleLineWalkFastPath?Gt(e,t,x):yt(e,t,n,x)}function Kt(e,t,n){let x=o0(e,t);return x<0?null:te(e,t,x,n)}function ne(e,t){if(e.widths.length===0)return{lineCount:0,maxLineWidth:0};let n={segmentIndex:0,graphemeIndex:0},x=0,i=0;if(!e.simpleLineWalkFastPath){let r=o0(e,n);return x=L0(e,n,r,t,u=>{u>i&&(i=u)}).lineCount,{lineCount:x,maxLineWidth:i}}for(;;){let r=Kt(e,n,t);if(r===null)return{lineCount:x,maxLineWidth:i};x++,r>i&&(i=r)}}var xe=new WeakMap;function ie(e,t,n){let x=n.get(e);if(x!==void 0)return x;x=[0];let i=z();for(let r of i.segment(t[e]))x.push(r.index+r.segment.length);return n.set(e,x),x}function re(e){let t=xe.get(e);return t!==void 0||(t=new Map,xe.set(e,t)),t}function se(e,t,n,x,i,r){let u="";for(let F=n;F<i;F++)if(!(e.kinds[F]==="soft-hyphen"||e.kinds[F]==="hard-break"))if(F===n&&x>0){let s=ie(F,e.segments,t);u+=e.segments[F].slice(s[x])}else u+=e.segments[F];if(r>0){let F=ie(i,e.segments,t);u+=e.segments[i].slice(F[n===i?x:0],F[r])}return g0(e.kinds,i,r)?u+"-":u}function jt(e){return e?{widths:[],lineEndFitAdvances:[],lineEndPaintAdvances:[],kinds:[],simpleLineWalkFastPath:!0,segLevels:null,breakableFitAdvances:[],breakablePreferredBreaks:[],letterSpacing:0,spacingGraphemeCounts:[],discretionaryHyphenWidth:0,tabStopAdvance:0,chunks:[],segments:[]}:{widths:[],lineEndFitAdvances:[],lineEndPaintAdvances:[],kinds:[],simpleLineWalkFastPath:!0,segLevels:null,breakableFitAdvances:[],breakablePreferredBreaks:[],letterSpacing:0,spacingGraphemeCounts:[],discretionaryHyphenWidth:0,tabStopAdvance:0,chunks:[]}}function ue(e,t){if(t==="zero-width-break"||t==="soft-hyphen"||t==="hard-break")return 0;if(t==="tab")return 1;let n=0,x=z();for(let i of x.segment(e))n++;return n}function Jt(e,t,n){return t>1?e+(t-1)*n:e}function zt(e,t,n,x,i){let r=X(),{cache:u,emojiCorrection:F}=Z0(t,$0(e.normalized)),s=$("-",_("-",u),F)+(i===0?0:i*2),f=$(" ",_(" ",u),F)*8,N=i!==0;if(e.len===0)return jt(n);let o=[],a=[],E=[],d=[],A=!N,L=n?[]:null,D=[],m=[],k=[],W=n?[]:null,b=[],R=0;function O(B,p,g,I,P,v,h,M,C){P!=="text"&&P!=="space"&&P!=="zero-width-break"&&(A=!1),o.push(p),a.push(g),E.push(I),d.push(P),L?.push(v),D.push(h),m.push(M),N&&k.push(C),W!==null&&W.push(B)}function c(B,p,g,I,P){let v=N?ue(B,g):0,h=Jt($(B,p,F),v,i),M=g==="space"||g==="preserved-space"||g==="zero-width-break"?0:h,C=M===0?0:M+(v>0?i:0),w=g==="space"||g==="zero-width-break"?0:h;if(P&&B.length>1){let y="sum-graphemes";i!==0?y="segment-prefixes":x0(B)?y="pair-context":r.preferPrefixWidthsForBreakableRuns&&(y="segment-prefixes");let j=q0(B,p,u,F,y),G=j===null||x==="keep-all"?null:H0(B);O(B,h,C,w,g,I,j,G,v);return}O(B,h,C,w,g,I,null,null,v)}for(let B=0;B<e.len;B++){let p=e.texts[B],g=e.kinds[B],I=e.starts[B];if(g==="soft-hyphen"){O(p,0,s,s,g,I,null,null,0);continue}if(g==="hard-break"){let P=o.length;O(p,0,0,0,g,I,null,null,0),b.push({startSegmentIndex:R,endSegmentIndex:P,consumedEndSegmentIndex:o.length}),R=o.length;continue}if(g==="tab"){O(p,0,0,0,g,I,null,null,N?ue(p,g):0);continue}if(g==="text"&&K(p)){let P=J0(p,r,x);for(let v=0;v<P.length;v++){let h=P[v],M=_(h.text,u);c(h.text,M,"text",I+h.start,h.overflow==="grapheme"||e.isWordLike[B]&&(x==="keep-all"||h.overflow==="word-like"))}continue}c(p,_(p,u),g,I,g==="text"&&(e.isWordLike[B]||z0(p)))}R<o.length&&b.push({startSegmentIndex:R,endSegmentIndex:o.length,consumedEndSegmentIndex:o.length});let S=L===null?null:b0(e.normalized,L);return W!==null?{widths:o,lineEndFitAdvances:a,lineEndPaintAdvances:E,kinds:d,simpleLineWalkFastPath:A,segLevels:S,breakableFitAdvances:D,breakablePreferredBreaks:m,letterSpacing:i,spacingGraphemeCounts:k,discretionaryHyphenWidth:s,tabStopAdvance:f,chunks:b,segments:W}:{widths:o,lineEndFitAdvances:a,lineEndPaintAdvances:E,kinds:d,simpleLineWalkFastPath:A,segLevels:S,breakableFitAdvances:D,breakablePreferredBreaks:m,letterSpacing:i,spacingGraphemeCounts:k,discretionaryHyphenWidth:s,tabStopAdvance:f,chunks:b}}function Ht(e,t,n,x){let i=x?.wordBreak??"normal",r=x?.letterSpacing??0,u=U0(e,X(),x?.whiteSpace,i);return zt(u,t,n,i,r)}function le(e,t,n){return Ht(e,t,!0,n)}function Ut(e,t,n,x,i,r,u){return{text:se(e,t,x,i,r,u),width:n,start:{segmentIndex:x,graphemeIndex:i},end:{segmentIndex:r,graphemeIndex:u}}}function _t(e,t,n,x,i){return{width:e,start:{segmentIndex:t,graphemeIndex:n},end:{segmentIndex:x,graphemeIndex:i}}}function oe(e,t,n){return e.widths.length===0?0:F0(e,t,(x,i,r,u,F)=>{n(_t(x,i,r,u,F))})}function Fe(e,t){return ne(e,t)}function ce(e){let t=0;return F0(e,Number.POSITIVE_INFINITY,n=>{n>t&&(t=n)}),t}function ae(e,t,n){let x=[];if(e.widths.length===0)return{lineCount:0,height:0,lines:x};let i=re(e),r=F0(e,t,(u,F,s,l,f)=>{x.push(Ut(e,i,u,F,s,l,f))});return{lineCount:r,height:r*n,lines:x}}return de(Qt);})();
+</script>
+<script type="application/json" id="film">{"title":"Colony 块介绍","size":[1920,1080],"fps":30,"style":{"roles":{"node":[44,800,"text"],"row":[30,600,"text"]}},"scenes":[{"name":"片头","dur":6,"title":"Colony 由哪些块组成","sub":"一个内核 + 四个 petri","els":[{"id":"stem","type":"chip","role":"node","text":"Stem","fill":"accent","x":960,"y":300,"align":"center","t":0.2,"in":"pop","flash":[4.5]},{"id":"a","type":"chip","role":"node","text":"AI 配置","x":560,"y":160,"align":"center","t":0.6,"in":"pop"},{"id":"b","type":"chip","role":"node","text":"全能 agent","x":1360,"y":160,"align":"center","t":0.9,"in":"pop"},{"id":"c","type":"chip","role":"node","text":"agent 桥接","x":560,"y":450,"align":"center","t":1.2,"in":"pop"},{"id":"d","type":"chip","role":"node","text":"界面","x":1360,"y":450,"align":"center","t":1.5,"in":"pop"},{"type":"line","from":"stem","to":"a","t":1.8,"in":"grow"},{"type":"line","from":"stem","to":"b","t":2,"in":"grow"},{"type":"line","from":"stem","to":"c","t":2.2,"in":"grow"},{"type":"line","from":"stem","to":"d","t":2.4,"in":"grow"}]},{"name":"Stem","dur":14,"title":"Stem · 内核","sub":"装块、连块、隔离运行","at":[2,5,8.5],"points":["块按段装载，改段即热重启","能力树：块之间互相调用","原版一直留着，改坏一键恢复"],"els":[{"id":"card","type":"box","x":80,"y":150,"w":460,"h":400,"stroke":"edge","label":"petri:ui · 界面","labelRole":"code","labelColor":"muted","t":0.3,"in":"fade"},{"id":"r1","type":"text","role":"row","text":"桌面","x":110,"y":230,"t":0.5,"in":"fade"},{"id":"r2","type":"text","role":"row","text":"窗口","x":110,"y":310,"t":0.6,"in":"fade"},{"id":"r3","type":"text","role":"row","text":"反馈","x":110,"y":390,"t":0.7,"in":"fade"},{"id":"r4","type":"text","role":"row","text":"装配","x":110,"y":470,"t":0.8,"in":"fade"},{"id":"s1","type":"chip","role":"code","text":"出厂","color":"muted","x":400,"y":226,"t":0.5,"in":"fade"},{"id":"s2","type":"chip","role":"code","text":"出厂","color":"muted","x":400,"y":306,"t":0.6,"in":"fade"},{"id":"s3a","type":"chip","role":"code","text":"出厂","color":"muted","x":400,"y":386,"t":0.7,"in":"fade","out":2},{"id":"s3b","type":"chip","role":"code","text":"改版","fill":"accent","x":400,"y":386,"t":2.1,"in":"pop","out":6},{"id":"s3c","type":"chip","role":"code","text":"改坏","fill":"warn","x":400,"y":386,"t":6.3,"in":"pop","out":9},{"id":"s3d","type":"chip","role":"code","text":"出厂","fill":"accent","x":400,"y":386,"t":9.3,"in":"pop","flash":[9.6]},{"id":"s4","type":"chip","role":"code","text":"出厂","color":"muted","x":400,"y":466,"t":0.8,"in":"fade"},{"id":"ok1","type":"chip","role":"tag","text":"改了，已重启 ✓","fill":"accent","x":80,"y":76,"t":2.5,"in":"pop","out":6},{"id":"bad","type":"chip","role":"tag","text":"改坏了","fill":"warn","x":80,"y":76,"t":6.5,"in":"pop","out":9},{"id":"ok2","type":"chip","role":"tag","text":"切回出厂版 ✓","fill":"accent","x":80,"y":76,"t":9.5,"in":"pop"},{"id":"stemN","type":"chip","role":"node","text":"Stem","fill":"accent","x":680,"y":110,"t":4.6,"in":"pop"},{"id":"k1","type":"chip","role":"code","text":"ai.chat","x":600,"y":270,"t":5,"in":"pop"},{"id":"k2","type":"chip","role":"code","text":"apps.create","x":790,"y":250,"t":5.2,"in":"pop"},{"id":"k3","type":"chip","role":"code","text":"frame.click","x":700,"y":360,"t":5.4,"in":"pop"},{"type":"line","from":"stemN","to":"k1","t":5.1,"in":"grow"},{"type":"line","from":"stemN","to":"k2","t":5.3,"in":"grow"},{"type":"line","from":"stemN","to":"k3","t":5.5,"in":"grow"},{"id":"iso","type":"box","x":620,"y":480,"w":320,"h":190,"fill":"none","stroke":"muted","dash":true,"label":"隔离窗","labelRole":"small","t":7.2,"in":"fade"},{"id":"app","type":"chip","role":"row","text":"📄 小应用","x":700,"y":560,"t":7.8,"in":"pop"},{"id":"exp","type":"chip","role":"tag","text":"导出 .html","fill":"accent","x":700,"y":700,"t":10.2,"in":"pop"}]},{"name":"AI 配置","dur":14,"title":"AI 配置 · 接厂商","sub":"所有模型调用都经过它","at":[2,5,9],"points":["兼容接口、本地模型都能接","文本之外再管 10 类模型","一键测通，通了自动记下"],"els":[{"id":"v1","type":"chip","role":"row","text":"OpenAI 兼容","x":80,"y":280,"t":0.5,"in":"pop"},{"id":"v2","type":"chip","role":"row","text":"Ollama 本地","x":80,"y":420,"t":0.8,"in":"pop"},{"id":"ai","type":"chip","role":"node","text":"AI 配置","fill":"accent","x":360,"y":340,"t":1.2,"in":"pop","flash":[9]},{"type":"line","from":"v1","to":"ai","t":1.8,"in":"grow"},{"type":"line","from":"v2","to":"ai","t":2,"in":"grow"},{"id":"grid","type":"box","x":610,"y":110,"w":390,"h":560,"fill":"none","stroke":"edge","dash":true,"label":"11 类模型","labelRole":"small","t":2.6,"in":"fade"},{"type":"line","from":"ai","to":"grid","t":2.8,"in":"grow"},{"id":"m1","type":"chip","role":"code","text":"chat","fill":"accent","x":630,"y":170,"t":3,"in":"pop"},{"id":"m2","type":"chip","role":"code","text":"image","x":630,"y":250,"t":3.3,"in":"pop"},{"id":"m3","type":"chip","role":"code","text":"imageEdit","x":630,"y":330,"t":3.6,"in":"pop"},{"id":"m4","type":"chip","role":"code","text":"video","x":630,"y":410,"t":3.9,"in":"pop"},{"id":"m5","type":"chip","role":"code","text":"videoEdit","x":630,"y":490,"t":4.2,"in":"pop"},{"id":"m6","type":"chip","role":"code","text":"stt","x":630,"y":570,"t":4.5,"in":"pop"},{"id":"m7","type":"chip","role":"code","text":"tts","x":820,"y":170,"t":4.8,"in":"pop","flash":[9.4]},{"id":"m8","type":"chip","role":"code","text":"realtime","x":820,"y":250,"t":5.1,"in":"pop"},{"id":"m9","type":"chip","role":"code","text":"embedding","x":820,"y":330,"t":5.4,"in":"pop"},{"id":"m10","type":"chip","role":"code","text":"rerank","x":820,"y":410,"t":5.7,"in":"pop"},{"id":"m11","type":"chip","role":"code","text":"music","x":820,"y":490,"t":6,"in":"pop"},{"id":"ok","type":"chip","role":"node","text":"测通 ✓","fill":"accent","x":300,"y":620,"t":9,"in":"pop"},{"id":"mo","type":"text","role":"code","text":"modelOf: { tts: \"…\" } 已记下","color":"accent","x":120,"y":740,"t":9.6,"in":"type"}]},{"name":"全能 agent","dur":14,"title":"全能 agent","sub":"对话框里的全能助手","at":[2,5.5,8.5],"points":["对话里调工具，一轮轮做完","看窗、点按钮、跑 JS","搜代码、翻旧对话、改块"],"els":[{"id":"ask","type":"chip","role":"row","text":"帮我做个应用","x":80,"y":110,"t":0.5,"in":"pop"},{"id":"ring","type":"ring","x":480,"y":560,"r":250,"t":1,"in":"grow","dot":[2,8,10]},{"id":"brain","type":"chip","role":"code","text":"大脑 · ai.chat","fill":"accent","x":480,"y":536,"align":"center","t":1.5,"in":"pop"},{"id":"t1","type":"chip","role":"code","text":"frame.snapshot","x":480,"y":288,"align":"center","t":1.2,"in":"pop","flash":[2]},{"id":"t2","type":"chip","role":"code","text":"frame.click","x":738,"y":461,"align":"center","t":1.4,"in":"pop","flash":[3.6]},{"id":"t3","type":"chip","role":"code","text":"js.run","x":627,"y":740,"align":"center","t":1.6,"in":"pop","flash":[5.2]},{"id":"t4","type":"chip","role":"code","text":"code.find","x":333,"y":740,"align":"center","t":1.8,"in":"pop","flash":[6.8]},{"id":"t5","type":"chip","role":"code","text":"history.find","x":222,"y":461,"align":"center","t":2,"in":"pop","flash":[8.4]},{"id":"done","type":"chip","role":"row","text":"✓ 做完了","fill":"accent","x":80,"y":900,"t":10.5,"in":"pop"}]},{"name":"agent 桥接","dur":12,"title":"agent 桥接","sub":"把外部 agent 当大脑用","at":[2,6,9],"points":["把命令行 agent 接成厂商","按会话分大脑，只发增量","接好后在大脑行选它"],"els":[{"id":"c1","type":"chip","role":"code","text":">_ claude","x":80,"y":170,"t":0.4,"in":"pop"},{"id":"c2","type":"chip","role":"code","text":">_ grok","x":80,"y":260,"t":0.6,"in":"pop"},{"id":"c3","type":"chip","role":"code","text":">_ cursor","x":80,"y":350,"t":0.8,"in":"pop"},{"id":"gw","type":"chip","role":"node","text":"网关","fill":"accent","x":380,"y":240,"t":1.2,"in":"pop"},{"id":"port","type":"text","role":"code","text":"127.0.0.1:4123","color":"muted","x":340,"y":330,"t":1.4,"in":"fade"},{"type":"line","from":"c1","to":"gw","t":1.8,"in":"grow"},{"type":"line","from":"c2","to":"gw","t":1.9,"in":"grow"},{"type":"line","from":"c3","to":"gw","t":2,"in":"grow"},{"id":"list","type":"box","x":640,"y":140,"w":320,"h":310,"stroke":"edge","label":"厂商","labelRole":"small","t":2.2,"in":"fade"},{"id":"o1","type":"chip","role":"code","text":"openai","x":670,"y":210,"t":2.4,"in":"fade"},{"id":"o2","type":"chip","role":"code","text":"ollama","x":670,"y":290,"t":2.5,"in":"fade"},{"id":"o3","type":"chip","role":"code","text":"gateway","fill":"accent","x":670,"y":370,"t":4,"in":"pop","flash":[4.6]},{"type":"line","from":"gw","to":"o3","t":3.6,"in":"grow"},{"id":"sa","type":"chip","role":"row","text":"会话 A","x":80,"y":620,"t":6.2,"in":"pop"},{"id":"ba","type":"chip","role":"row","text":"大脑 A","fill":"accent","x":700,"y":620,"t":6.4,"in":"pop"},{"type":"line","from":"sa","to":"ba","t":6.6,"in":"grow"},{"type":"chip","role":"small","text":"增量","fill":"card2","over":true,"t":7,"out":8.5,"path":[[7,280,616],[8.5,560,616]]},{"id":"sb","type":"chip","role":"row","text":"会话 B","x":80,"y":780,"t":6.8,"in":"pop"},{"id":"bb","type":"chip","role":"row","text":"大脑 B","fill":"agent","x":700,"y":780,"t":7,"in":"pop"},{"type":"line","from":"sb","to":"bb","color":"agent","t":7.2,"in":"grow"},{"type":"chip","role":"small","text":"增量","fill":"card2","over":true,"t":8.6,"out":10.1,"path":[[8.6,280,776],[10.1,560,776]]}]},{"name":"界面","dur":14,"title":"界面 · 桌面与窗口","sub":"你眼前看到的都归它","at":[1.5,5,9.6],"points":["桌面、窗口、小应用都归它","点选编辑：点哪改哪","谁动了什么，在原处看得见"],"els":[{"id":"desk","type":"box","x":60,"y":110,"w":900,"h":820,"stroke":"edge","t":0.3,"in":"fade"},{"id":"i1","type":"icon","text":"🖼️","label":"相册","x":150,"y":210,"size":72,"t":0.6,"in":"pop"},{"id":"i2","type":"icon","text":"📝","label":"笔记","x":150,"y":350,"size":72,"t":0.8,"in":"pop"},{"id":"i3","type":"icon","text":"🧮","label":"计算器","x":150,"y":490,"size":72,"t":1,"in":"pop"},{"id":"winA","type":"box","x":270,"y":150,"w":640,"h":330,"fill":"card2","stroke":"edge","label":"相册","labelRole":"small","t":1.6,"in":"pop"},{"id":"ph","type":"box","x":310,"y":250,"w":560,"h":110,"fill":"card","t":2,"in":"fade"},{"id":"phT","type":"text","role":"row","text":"最近的照片","x":590,"y":285,"align":"center","t":2.2,"in":"fade","out":6.4},{"id":"sel","type":"box","x":306,"y":246,"w":568,"h":118,"fill":"none","stroke":"warn","sw":4,"t":4.8,"in":"fade","out":12},{"id":"phE","type":"chip","role":"row","text":"最近的照片","fill":"accent","x":590,"y":278,"align":"center","t":6.5,"in":"pop"},{"type":"cursor","label":"你","color":"text","t":3.4,"in":"fade","out":6.5,"path":[[3.4,760,820],[4.6,700,320]]},{"type":"cursor","label":"agent","color":"agent","t":7.6,"in":"fade","path":[[7.6,820,860],[9,170,368]]},{"id":"open","type":"chip","role":"tag","text":"打开 笔记","fill":"agent","x":200,"y":322,"t":9.4,"in":"pop"},{"id":"winB","type":"box","x":270,"y":560,"w":640,"h":330,"fill":"card2","stroke":"edge","label":"笔记","labelRole":"small","t":10,"in":"pop"}]},{"name":"结尾","dur":8,"title":"一个内核，块块可换","sub":"Colony：功能都是能改的块","titleAt":1.8,"els":[{"type":"chip","role":"node","text":"Stem","fill":"accent","align":"center","over":true,"out":1.3,"path":[[0,960,110],[1.3,960,380]]},{"type":"chip","role":"node","text":"AI 配置","align":"center","over":true,"out":1.3,"path":[[0,520,240],[1.3,960,380]]},{"type":"chip","role":"node","text":"全能 agent","align":"center","over":true,"out":1.3,"path":[[0,1400,240],[1.3,960,380]]},{"type":"chip","role":"node","text":"agent 桥接","align":"center","over":true,"out":1.3,"path":[[0,600,500],[1.3,960,380]]},{"type":"chip","role":"node","text":"界面","align":"center","over":true,"out":1.3,"path":[[0,1320,500],[1.3,960,380]]},{"id":"file","type":"file","x":885,"y":300,"w":150,"h":190,"fill":"accent","label":".html","labelRole":"row","labelColor":"ink","t":1.3,"in":"pop","flash":[2.6]}]}]}</script>
+<script>
+// ═ 视频引擎 ═
+// 一份分镜数据(JSON) → render(t): 给一个时间就画出那一帧, 画在画布上。能播、能拖、能自检、能一帧帧导出成视频文件。
+// 文字全用 pretext 排: 画之前就知道每段字几行、多宽; 放不下先缩字号, 缩到七成还放不下就在自检里报。
+// 风格写在数据的 style 里(颜色、字号都是数字), 动效只有 pop / rise / fade / grow / type 五种, 片子之间才长得一样。
+'use strict';
+const P = Pretext,
+  W0 = 1920,
+  H0 = 1080,
+  SAFE = 40;
+const BASE = {
+  bg: '#0a0a0a',
+  card: '#131313',
+  card2: '#1a1a1a',
+  edge: '#2a2a2a',
+  text: '#fafafa',
+  muted: '#8a8a8a',
+  dim: '#555555',
+  accent: '#B5FF00',
+  agent: '#5CE1E6',
+  warn: '#FF9500',
+  danger: '#FF4444',
+  ink: '#0a0a0a',
+  sans: '"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif',
+  mono: 'Consolas,"SF Mono",Menlo,monospace',
+  roles: {
+    // 名字: [字号, 粗细, 颜色, 字体]
+    title: [88, 800, 'text'],
+    sub: [44, 400, 'muted'],
+    point: [40, 600, 'text'],
+    tag: [28, 700, 'text'],
+    code: [24, 600, 'text', 'mono'],
+    small: [22, 400, 'muted'],
+    big: [120, 800, 'accent'],
+  },
+  rules: { titleMax: 12, pointMax: 16, points: 3 },
+};
+// ═ 写片子的说明 ═ agent 用 help() 读
+const HELP = `片子 = {title, size: [1920, 1080], fps: 30, scenes: [场],
+  style?: {颜色名: "#hex", roles: {名: [字号, 粗细, 颜色名, "mono"?]}},
+  music?: false(不要背景音乐) | "一句话"(交给音乐模型做; 不写就用引擎自己合成的和弦)}
+场 = {name, dur(秒), title?, sub?, points?(最多 3 条), at?(每条要点出场秒), titleAt?, els: [元素],
+  layout?: "split" | "center", say?: 旁白(导出时交给语音模型念, 从这一场开头放; 要在 Colony 里才有语音模型)}
+  split: 右边 x 1040 起放标题、副标题、要点, 左边 x 60~980 归你画; center: 标题字幕在下半中间, 上面 y 60~640 归你画
+元素都有: id(线要连它就给), type, x, y(左上角; align: "center" 时 x 是中线), t(场内出场秒),
+  in: pop | rise | fade | grow | type, out(退场秒), flash: [秒…](亮一下), path: [[秒, x, y]…](移动), over: true(允许压着别的)
+type: text {text, role, w?, n?(最多几行), align?, color?, bal?(几行一样长)}
+  chip {text, role(默认 tag), fill(颜色名), color?}: 硬阴影标签, 宽度按字算
+  box {w, h, fill | "none", stroke?, dash?, sw?, r?, label?, labelRole?, labelColor?}; file 同 box, 画成折角的纸
+  line {from, to(元素 id 或 [x, y]), color?, w?, dash?}: 两头自动停在元素边外 8px
+  ring {r, color?, dot: [开始秒, 一圈几秒, 停下秒]}(x, y 是圆心); icon {text(emoji), size?, label?}(x, y 是中心)
+  cursor {label, color, path}
+颜色名: bg card card2 edge text muted dim accent agent warn danger ink, 也可以直接写 #hex
+角色字号: title 88, sub 44, point 40, tag 28, code 24, small 22, big 120; 放不下自动缩, 最多缩到七成
+check() 回 [{场, 级: "错" | "提醒", 说}]: 字放不下、出安全框(40px)、字叠字、线穿字都算错, 播之前先看
+在 Colony 里换片子: kv.set {key: "appstore:<这个应用的 id>:film", value: 片子}, 再重开这个应用
+seek(秒) 停在那一帧; exportVideo() 一帧帧导出 WebM(1920×1080), 带背景音乐和旁白`;
+const MOTION = { pop: 0.45, rise: 0.35, fade: 0.4, grow: 0.6 };
+let S,
+  film,
+  scenes,
+  total,
+  T = 0,
+  playing = true,
+  lastNow = 0,
+  g;
+const cv = document.getElementById('cv'),
+  $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const eOut = u => 1 - Math.pow(1 - u, 3),
+  eInOut = u => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+const eBack = u => 1 + 2.70158 * Math.pow(u - 1, 3) + 1.70158 * Math.pow(u - 1, 2);
+const col = c => (c && S[c]) || c || S.text;
+
+// ═ 排字 ═ 同一段字同一个字体只让 pretext 量一次
+const cache = new Map();
+const prep = (text, font) => {
+  const k = font + '\u0001' + text;
+  if (!cache.has(k)) cache.set(k, P.prepareWithSegments(text, font));
+  return cache.get(k);
+};
+function fit(role, text, w, n = 1, bal) {
+  // 在宽 w 里最多 n 行: 从角色字号往下缩, 最小缩到七成
+  const [size0, weight, color, fam] = S.roles[role] || S.roles.point;
+  for (let size = size0; ; size -= 2) {
+    const font = weight + ' ' + size + 'px ' + S[fam || 'sans'],
+      p = prep(String(text), font),
+      lh = Math.round(size * 1.3);
+    const cnt = w ? P.measureLineStats(p, w).lineCount : 1;
+    if (cnt <= n || size <= size0 * 0.7) {
+      let ww = w;
+      if (w && bal && cnt > 1) {
+        // 几行一样长: 找行数不变的最窄宽度
+        let lo = 0,
+          hi = w;
+        while (hi - lo > 2) {
+          const m = (lo + hi) / 2;
+          if (P.measureLineStats(p, m).lineCount > cnt) lo = m;
+          else hi = m;
+        }
+        ww = hi;
+      }
+      const lines = w
+        ? P.layoutWithLines(p, ww, lh).lines
+        : [{ text: String(text), width: P.measureNaturalWidth(p) }];
+      return {
+        size,
+        size0,
+        font,
+        lh,
+        color,
+        lines,
+        w: Math.max(0, ...lines.map(l => l.width)),
+        h: lines.length * lh,
+        ok: cnt <= n,
+      };
+    }
+  }
+}
+
+// ═ 时间 ═ 一个元素在场内时间 lt 的样子
+function state(e, lt) {
+  const d = lt - (e.t || 0);
+  if (d < 0 || (e.out != null && lt > e.out + 0.3)) return null;
+  let a = 1,
+    s = 1,
+    dy = 0,
+    grow = 1;
+  const u = clamp(d / (MOTION[e.in] || 0.4));
+  if (e.in === 'pop') {
+    s = 0.6 + 0.4 * eBack(u);
+    a = clamp(u * 2);
+  } else if (e.in === 'rise') {
+    dy = 20 * (1 - eOut(u));
+    a = eOut(u);
+  } else if (e.in === 'fade') a = eOut(u);
+  else if (e.in === 'grow') grow = eOut(u);
+  else if (e.in === 'type') grow = clamp(d / (String(e.text || '').length * 0.05 + 0.01));
+  if (e.out != null && lt > e.out) a *= 1 - clamp((lt - e.out) / 0.3);
+  let hl = 0;
+  (e.flash || []).forEach(f => {
+    if (lt >= f && lt < f + 0.5) hl = Math.max(hl, Math.sin((Math.PI * (lt - f)) / 0.5));
+  });
+  let x = e.x || 0,
+    y = e.y || 0;
+  if (e.path) {
+    // [[秒, x, y], …] 两帧之间缓进缓出
+    const k = e.path,
+      i = k.findIndex(p => p[0] > lt);
+    if (i < 0) [, x, y] = k[k.length - 1];
+    else if (i === 0) [, x, y] = k[0];
+    else {
+      const [t1, x1, y1] = k[i - 1],
+        [t2, x2, y2] = k[i],
+        v = eInOut((lt - t1) / (t2 - t1));
+      x = x1 + (x2 - x1) * v;
+      y = y1 + (y2 - y1) * v;
+    }
+  }
+  return { a, s, dy, grow, hl, x, y };
+}
+
+// ═ 量 ═ 先算出每个元素这一刻的框, 线才连得到边上, 自检才查得了重叠
+function lay(e, st) {
+  const x = st.x,
+    y = st.y + st.dy;
+  if (e.type === 'text') {
+    const f = fit(e.role || 'point', e.text, e.w, e.n || 1, e.bal);
+    return { f, bb: [e.align === 'center' ? x - f.w / 2 : x, y, f.w, f.h], words: true };
+  }
+  if (e.type === 'chip') {
+    const f = fit(e.role || 'tag', e.text, e.maxw, 1),
+      pw = f.size * 0.6,
+      ph = f.size * 0.35,
+      w = f.w + pw * 2,
+      h = f.lh + ph * 2;
+    return { f, pw, ph, bb: [e.align === 'center' ? x - w / 2 : x, y, w, h], words: true };
+  }
+  if (e.type === 'icon') {
+    const sz = e.size || 64,
+      f = e.label && fit('small', e.label);
+    return { f, bb: [x - sz / 2, y - sz / 2, sz, sz + (f ? f.lh + 6 : 0)], words: !!f };
+  }
+  if (e.type === 'ring') return { bb: [x - e.r, y - e.r, e.r * 2, e.r * 2] };
+  if (e.type === 'cursor') return { bb: [x, y, 30, 36] };
+  if (e.type === 'line') return { bb: [0, 0, 0, 0] };
+  const f = e.label && fit(e.labelRole || 'code', e.label, (e.w || 200) - 32);
+  return { f, bb: [x, y, e.w || 200, e.h || 100] }; // box / file
+}
+const edge = (bb, px, py, gap) => {
+  // 从框中心朝 (px, py) 走, 停在框边外 gap 处
+  const cx = bb[0] + bb[2] / 2,
+    cy = bb[1] + bb[3] / 2,
+    dx = px - cx,
+    dy = py - cy;
+  if (!dx && !dy) return [cx, cy];
+  const k = Math.min(bb[2] / 2 / Math.abs(dx || 1e-9), bb[3] / 2 / Math.abs(dy || 1e-9)),
+    len = Math.hypot(dx, dy);
+  return [cx + dx * k + (dx / len) * gap, cy + dy * k + (dy / len) * gap];
+};
+function ends(e, boxes) {
+  const pt = v => (typeof v === 'string' ? boxes[v] : [v[0], v[1], 0, 0]),
+    a = pt(e.from),
+    b = pt(e.to);
+  if (!a || !b) return null;
+  const ca = [a[0] + a[2] / 2, a[1] + a[3] / 2],
+    cb = [b[0] + b[2] / 2, b[1] + b[3] / 2];
+  return [a[2] ? edge(a, cb[0], cb[1], 8) : ca, b[2] ? edge(b, ca[0], ca[1], 8) : cb];
+}
+
+// ═ 画 ═
+const rr = (x, y, w, h, r) => {
+  g.beginPath();
+  g.roundRect(x, y, w, h, r);
+};
+function words(f, x, y, color, upto) {
+  // 一行行画; upto = 打字时画到第几个字
+  g.fillStyle = col(color || f.color);
+  g.font = f.font;
+  g.textBaseline = 'top';
+  let left = upto == null ? Infinity : upto;
+  f.lines.forEach((l, i) => {
+    if (left <= 0) return;
+    const t = [...l.text];
+    g.fillText(t.slice(0, left).join(''), x, y + i * f.lh + (f.lh - f.size) / 2);
+    left -= t.length;
+  });
+}
+function glow(bb, hl, r) {
+  if (!hl) return;
+  g.save();
+  g.globalAlpha *= hl;
+  g.strokeStyle = S.accent;
+  g.lineWidth = 5;
+  rr(bb[0] - 7, bb[1] - 7, bb[2] + 14, bb[3] + 14, r + 7);
+  g.stroke();
+  g.restore();
+}
+function draw(e, st, L, boxes) {
+  const [x, y, w, h] = L.bb;
+  g.save();
+  g.globalAlpha *= st.a;
+  if (st.s !== 1) {
+    const cx = x + w / 2,
+      cy = y + h / 2;
+    g.translate(cx, cy);
+    g.scale(st.s, st.s);
+    g.translate(-cx, -cy);
+  }
+  if (e.type === 'text') {
+    const n = [...String(e.text)].length;
+    L.f.lines.forEach((l, i) => {
+      l.dx = e.align === 'center' ? (L.f.w - l.width) / 2 : 0;
+    });
+    g.fillStyle = col(e.color || L.f.color);
+    g.font = L.f.font;
+    g.textBaseline = 'top';
+    let left = e.in === 'type' ? Math.floor(n * st.grow) : Infinity;
+    L.f.lines.forEach((l, i) => {
+      if (left <= 0) return;
+      const t = [...l.text];
+      g.fillText(t.slice(0, left).join(''), x + l.dx, y + i * L.f.lh + (L.f.lh - L.f.size) / 2);
+      left -= t.length;
+    });
+  } else if (e.type === 'chip') {
+    // 硬阴影标签: 2px 黑边 + 3px 3px 0 黑影
+    const fill = col(e.fill || 'card2'),
+      r = 10;
+    g.fillStyle = '#000';
+    rr(x + 3, y + 3, w, h, r);
+    g.fill();
+    g.fillStyle = fill;
+    rr(x, y, w, h, r);
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = '#000';
+    g.stroke();
+    words(L.f, x + L.pw, y + L.ph, e.color || (/^#(B5FF00|5CE1E6|FF9500|FFE14D)/i.test(fill) ? 'ink' : null));
+    glow(L.bb, st.hl, r);
+  } else if (e.type === 'box' || e.type === 'file') {
+    const r = e.r == null ? 16 : e.r;
+    if (e.type === 'file') {
+      // 纸: 右上角折一下
+      const c = 36;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + w - c, y);
+      g.lineTo(x + w, y + c);
+      g.lineTo(x + w, y + h);
+      g.lineTo(x, y + h);
+      g.closePath();
+    } else rr(x, y, w, h, r);
+    if (e.fill !== 'none') {
+      g.fillStyle = col(e.fill || 'card');
+      g.fill();
+    }
+    if (e.stroke) {
+      g.setLineDash(e.dash ? [12, 10] : []);
+      g.lineWidth = e.sw || 2;
+      g.strokeStyle = col(e.stroke);
+      g.stroke();
+      g.setLineDash([]);
+    }
+    if (L.f) words(L.f, x + 16, e.type === 'file' ? y + (h - L.f.lh) / 2 : y + 14, e.labelColor);
+    glow(L.bb, st.hl, r);
+  } else if (e.type === 'icon') {
+    const sz = e.size || 64;
+    g.font = sz * 0.8 + 'px ' + S.sans;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(e.text, x + w / 2, y + sz / 2);
+    g.textAlign = 'left';
+    if (L.f) words(L.f, x + w / 2 - L.f.w / 2, y + sz + 6);
+    glow([x, y, w, sz], st.hl, 12);
+  } else if (e.type === 'line') {
+    const p = ends(e, boxes);
+    if (p) {
+      const [[x1, y1], [x2, y2]] = p;
+      g.strokeStyle = col(e.color || 'accent');
+      g.lineWidth = e.w || 3;
+      g.setLineDash(e.dash ? [10, 8] : []);
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x1 + (x2 - x1) * st.grow, y1 + (y2 - y1) * st.grow);
+      g.stroke();
+      g.setLineDash([]);
+      L.seg = [x1, y1, x2, y2];
+    }
+  } else if (e.type === 'ring') {
+    const cx = x + e.r,
+      cy = y + e.r;
+    g.strokeStyle = col(e.color || 'accent');
+    g.lineWidth = e.w || 4;
+    g.beginPath();
+    g.arc(cx, cy, e.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * st.grow);
+    g.stroke();
+    if (e.dot) {
+      // 一个点绕圈走: dot = [开始秒, 转一圈几秒, 停下秒]
+      const [d0, per, d1] = e.dot,
+        lt = Math.min(st.lt, d1 == null ? Infinity : d1);
+      if (lt >= d0) {
+        const ang = -Math.PI / 2 + (Math.PI * 2 * (lt - d0)) / per;
+        g.fillStyle = col(e.color || 'accent');
+        g.beginPath();
+        g.arc(cx + Math.cos(ang) * e.r, cy + Math.sin(ang) * e.r, 12, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  } else if (e.type === 'cursor') {
+    // 箭头 + 名字牌
+    g.fillStyle = col(e.color || 'agent');
+    g.strokeStyle = '#000';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + 10, y + 32);
+    g.lineTo(x + 15, y + 19);
+    g.lineTo(x + 28, y + 16);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    if (e.label) {
+      const f = fit('small', e.label),
+        bw = f.w + 16;
+      g.fillStyle = col(e.color || 'agent');
+      rr(x + 22, y + 30, bw, f.lh + 6, 6);
+      g.fill();
+      words(f, x + 30, y + 33, 'ink');
+    }
+  }
+  g.restore();
+}
+
+// ═ 一场 ═ 标准版面: split = 左边画图、右边标题要点; center = 标题字幕在下半中间
+function parts(sc) {
+  const out = [],
+    L = sc.layout || (sc.points ? 'split' : 'center');
+  if (L === 'split') {
+    if (sc.title)
+      out.push({
+        id: '_title',
+        type: 'text',
+        role: 'title',
+        text: sc.title,
+        x: 1040,
+        y: 110,
+        w: 820,
+        t: 0.2,
+        in: 'rise',
+      });
+    if (sc.sub)
+      out.push({
+        id: '_sub',
+        type: 'text',
+        role: 'sub',
+        text: sc.sub,
+        x: 1040,
+        y: 230,
+        w: 820,
+        t: 0.5,
+        in: 'rise',
+      });
+    out.push({
+      id: '_rule',
+      type: 'box',
+      x: 1040,
+      y: 302,
+      w: 72,
+      h: 6,
+      r: 3,
+      fill: 'accent',
+      t: 0.7,
+      in: 'fade',
+    });
+    (sc.points || []).forEach((p, i) => {
+      const t = (sc.at || [])[i] != null ? sc.at[i] : 1.5 + i * 2.5;
+      out.push({
+        id: '_n' + i,
+        type: 'chip',
+        role: 'tag',
+        text: String(i + 1),
+        fill: 'accent',
+        x: 1040,
+        y: 356 + i * 104,
+        t,
+        in: 'rise',
+      });
+      out.push({
+        id: '_p' + i,
+        type: 'text',
+        role: 'point',
+        text: p,
+        x: 1112,
+        y: 360 + i * 104,
+        w: 760,
+        t,
+        in: 'rise',
+      });
+    });
+  } else {
+    if (sc.title)
+      out.push({
+        id: '_title',
+        type: 'text',
+        role: 'title',
+        text: sc.title,
+        x: 960,
+        y: 700,
+        w: 1600,
+        align: 'center',
+        t: sc.titleAt || 0.3,
+        in: 'rise',
+      });
+    if (sc.sub)
+      out.push({
+        id: '_sub',
+        type: 'text',
+        role: 'sub',
+        text: sc.sub,
+        x: 960,
+        y: 820,
+        w: 1600,
+        align: 'center',
+        t: (sc.titleAt || 0.3) + 0.4,
+        in: 'rise',
+      });
+  }
+  return (sc.els || []).concat(out);
+}
+function frame(sc, lt, paint) {
+  // 这一刻场上每个元素的框; paint 为真就顺手画出来
+  const items = [],
+    boxes = {};
+  for (const e of sc._parts) {
+    const st = state(e, lt);
+    if (!st) continue;
+    st.lt = lt;
+    const L = lay(e, st);
+    if (e.id) boxes[e.id] = L.bb;
+    items.push({ e, st, L });
+  }
+  if (paint) items.forEach(it => draw(it.e, it.st, it.L, boxes));
+  else
+    items
+      .filter(it => it.e.type === 'line')
+      .forEach(it => {
+        const p = ends(it.e, boxes);
+        if (p) it.L.seg = [...p[0], ...p[1]];
+      });
+  return items;
+}
+function paint(ctx, W, H, t) {
+  // 整帧: 底色、按比例缩放到画布、换场时淡黑
+  g = ctx;
+  const k = Math.min(W / W0, H / H0);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, W, H);
+  g.setTransform(k, 0, 0, k, (W - W0 * k) / 2, (H - H0 * k) / 2);
+  g.fillStyle = S.bg;
+  g.fillRect(0, 0, W0, H0);
+  const sc = scenes.find(s => t < s._end) || scenes[scenes.length - 1],
+    lt = t - sc._start;
+  frame(sc, lt, true);
+  const fade = Math.max(sc._start > 0 ? 1 - lt / 0.3 : 0, 1 - (sc._end - t) / 0.3, 0);
+  if (fade > 0 && sc !== scenes[scenes.length - 1]) {
+    g.fillStyle = 'rgba(0,0,0,' + clamp(fade) + ')';
+    g.fillRect(0, 0, W0, H0);
+  }
+}
+
+// ═ 自检 ═ 字放不放得下、出没出框、同时在场的字叠没叠、线穿没穿过字、版面规矩
+const hit = (a, b) =>
+  a[0] < b[0] + b[2] - 2 && b[0] < a[0] + a[2] - 2 && a[1] < b[1] + b[3] - 2 && b[1] < a[1] + a[3] - 2;
+function cross(s, b) {
+  // 线段 s 穿不穿过框 b(先缩 4px, 擦边不算)
+  const [x1, y1, x2, y2] = s,
+    r = [b[0] + 4, b[1] + 4, b[2] - 8, b[3] - 8];
+  for (let i = 0; i <= 20; i++) {
+    const x = x1 + ((x2 - x1) * i) / 20,
+      y = y1 + ((y2 - y1) * i) / 20;
+    if (x > r[0] && x < r[0] + r[2] && y > r[1] && y < r[1] + r[3]) return true;
+  }
+  return false;
+}
+function check() {
+  const out = [],
+    seen = new Set(),
+    say = (i, lv, m) => {
+      const k = i + lv + m;
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push({ 场: i, 级: lv, 说: m });
+      }
+    };
+  scenes.forEach((sc, i) => {
+    const 名 = '第 ' + i + ' 场「' + (sc.name || sc.title || '') + '」';
+    if (sc.title && [...sc.title].length > S.rules.titleMax)
+      say(i, '提醒', 名 + '标题超过 ' + S.rules.titleMax + ' 个字');
+    if ((sc.points || []).length > S.rules.points) say(i, '错', 名 + '要点超过 ' + S.rules.points + ' 条');
+    (sc.points || []).forEach(p => {
+      if ([...p].length > S.rules.pointMax)
+        say(i, '提醒', 名 + '要点「' + p + '」超过 ' + S.rules.pointMax + ' 个字');
+    });
+    sc._parts.forEach(e => {
+      if ((e.t || 0) > sc.dur)
+        say(i, '错', 名 + (e.id || e.type) + ' 出场时间 ' + e.t + ' 秒超过这场的 ' + sc.dur + ' 秒');
+    });
+    for (let lt = 0; lt <= sc.dur; lt += 0.25) {
+      const items = frame(sc, lt, false).filter(it => it.st.a > 0.5),
+        txt = items.filter(it => it.L.words && !it.e.over); // over = 本来就该压着别的(顺着线走的、收拢的)
+      txt.forEach(it => {
+        const b = it.L.bb,
+          nm = it.e.id || it.e.text || it.e.label;
+        if (it.L.f && !it.L.f.ok) say(i, '错', 名 + '「' + nm + '」缩到七成还放不下');
+        else if (it.L.f && it.L.f.size < it.L.f.size0)
+          say(i, '提醒', 名 + '「' + nm + '」缩到 ' + it.L.f.size + 'px 才放下');
+        if (b[0] < SAFE || b[1] < SAFE || b[0] + b[2] > W0 - SAFE || b[1] + b[3] > H0 - SAFE)
+          say(i, '错', 名 + '「' + nm + '」出了安全框');
+      });
+      for (let a = 0; a < txt.length; a++)
+        for (let b = a + 1; b < txt.length; b++) {
+          if (hit(txt[a].L.bb, txt[b].L.bb))
+            say(
+              i,
+              '错',
+              名 +
+                '「' +
+                (txt[a].e.id || txt[a].e.text) +
+                '」和「' +
+                (txt[b].e.id || txt[b].e.text) +
+                '」叠在一起'
+            );
+        }
+      items
+        .filter(it => it.L.seg)
+        .forEach(ln =>
+          txt.forEach(it => {
+            if (it.e.id === ln.e.from || it.e.id === ln.e.to) return;
+            if (cross(ln.L.seg, it.L.bb))
+              say(
+                i,
+                '错',
+                名 +
+                  '线「' +
+                  (ln.e.id || ln.e.from + '→' + ln.e.to) +
+                  '」穿过了「' +
+                  (it.e.id || it.e.text) +
+                  '」'
+              );
+          })
+        );
+    }
+  });
+  return out;
+}
+
+// ═ 配音 ═ 导出时离线合成整片的声音: 背景音乐 + 每场的旁白(念的时候音乐压低), 再编成 Opus
+function chords(ac, to) {
+  // 自己合成的背景音乐: 四个和弦一轮, 每个两秒, 三角波慢起慢落
+  const C = [
+    [261.6, 329.6, 392],
+    [220, 261.6, 329.6],
+    [174.6, 220, 261.6],
+    [196, 246.9, 293.7],
+  ];
+  for (let t = 0, i = 0; t < total; t += 2, i++)
+    C[i % 4].forEach(f => {
+      const o = ac.createOscillator(),
+        g = ac.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.1, t + 0.6);
+      g.gain.linearRampToValueAtTime(0, t + 2.2);
+      o.connect(g).connect(to);
+      o.start(t);
+      o.stop(t + 2.3);
+    });
+}
+async function soundtrack() {
+  // 旁白和音乐都在 Colony 里向模型要(小应用能调); 不在 Colony 里或没配模型: 没有旁白, 音乐用自己合成的
+  const R = 48000,
+    ac = new OfflineAudioContext(2, Math.ceil(total * R), R),
+    bus = ac.createGain(),
+    bed = ac.createGain(),
+    said = [];
+  const call = (p, a) =>
+    (window.colony && colony.call ? colony.call(p, a) : Promise.reject(new Error('不在 Colony 里')));
+  const decode = r =>
+    (r.data
+      ? Promise.resolve(Uint8Array.from(atob(r.data), c => c.charCodeAt(0)).buffer)
+      : fetch(r.url).then(x => x.arrayBuffer())
+    ).then(b => ac.decodeAudioData(b));
+  bus.connect(ac.destination);
+  bed.connect(bus);
+  bed.gain.value = 0.5;
+  if (film.music !== false) {
+    const m =
+      typeof film.music === 'string' &&
+      (await call('ai.music', { prompt: film.music })
+        .then(decode)
+        .catch(() => null));
+    if (m) {
+      const x = ac.createBufferSource();
+      x.buffer = m;
+      x.loop = true;
+      x.connect(bed);
+      x.start();
+    } else chords(ac, bed);
+    said.push(m ? '背景音乐是音乐模型做的' : '背景音乐是自己合成的');
+  }
+  const voices = await Promise.all(
+    scenes.map(sc => (sc.say ? call('ai.speak', { text: String(sc.say) }).then(decode).catch(e => e) : null))
+  );
+  voices.forEach((b, i) => {
+    if (!b) return;
+    if (b instanceof Error) return said.push('第 ' + (i + 1) + ' 场的旁白没念成: ' + b.message);
+    const t = scenes[i]._start + 0.3,
+      x = ac.createBufferSource();
+    x.buffer = b;
+    x.connect(bus);
+    x.start(t);
+    bed.gain.setTargetAtTime(0.15, t, 0.1);
+    bed.gain.setTargetAtTime(0.5, t + b.duration, 0.3);
+    if (t + b.duration > scenes[i]._end) said.push('第 ' + (i + 1) + ' 场的旁白比这一场长, 压到了下一场');
+  });
+  return { buf: await ac.startRendering(), said };
+}
+async function opus(buf) {
+  // 每 20 毫秒一块编成 Opus
+  const out = [],
+    R = buf.sampleRate,
+    L = buf.getChannelData(0),
+    Rc = buf.getChannelData(1);
+  let bad;
+  const enc = new AudioEncoder({
+    error: e => {
+      bad = e;
+    },
+    output: c => {
+      const b = new Uint8Array(c.byteLength);
+      c.copyTo(b);
+      out.push([c.timestamp, true, b, 2]);
+    },
+  });
+  enc.configure({ codec: 'opus', sampleRate: R, numberOfChannels: 2, bitrate: 128000 });
+  for (let i = 0; i < buf.length && !bad; i += 960) {
+    const k = Math.min(960, buf.length - i),
+      d = new Float32Array(k * 2);
+    d.set(L.subarray(i, i + k));
+    d.set(Rc.subarray(i, i + k), k);
+    const a = new AudioData({
+      format: 'f32-planar',
+      sampleRate: R,
+      numberOfFrames: k,
+      numberOfChannels: 2,
+      timestamp: Math.round((i / R) * 1e6),
+      data: d,
+    });
+    enc.encode(a);
+    a.close();
+  }
+  await enc.flush();
+  enc.close();
+  if (bad) throw bad;
+  return out;
+}
+
+// ═ 导出 ═ 一帧帧画到 1920×1080 的画布上, WebCodecs 编码, 自己拼成 WebM; 不录屏、不用人点、窗口藏起来也照样。
+// 有声音就加第二条轨(Opus), 音频块和画面块按时间穿插放进各段
+function webm(chunks, W, H, codec, dur, sound) {
+  const cat = a => {
+    const o = new Uint8Array(a.reduce((n, b) => n + b.length, 0));
+    let k = 0;
+    a.forEach(b => {
+      o.set(b, k);
+      k += b.length;
+    });
+    return o;
+  };
+  const uint = n => {
+    const a = [];
+    do {
+      a.unshift(n % 256);
+      n = Math.floor(n / 256);
+    } while (n > 0);
+    return new Uint8Array(a);
+  };
+  const size = n => {
+    const b = new Uint8Array(8);
+    b[0] = 1;
+    for (let i = 7; i > 0; i--) {
+      b[i] = n % 256;
+      n = Math.floor(n / 256);
+    }
+    return b;
+  };
+  const el = (id, ...ps) => {
+    const body = cat(
+      ps.map(p => (typeof p === 'string' ? new TextEncoder().encode(p) : typeof p === 'number' ? uint(p) : p))
+    );
+    return cat([new Uint8Array(id.match(/../g).map(x => parseInt(x, 16))), size(body.length), body]);
+  };
+  const f64 = x => {
+    const b = new Uint8Array(8);
+    new DataView(b.buffer).setFloat64(0, x);
+    return b;
+  };
+  const cl = [],
+    all = chunks.map(c => c.concat(1)).concat(sound || []).sort((a, b) => a[0] - b[0] || a[3] - b[3]);
+  let cur = null,
+    base = 0;
+  all.forEach(([ts, key, data, tr]) => {
+    const ms = Math.round(ts / 1000);
+    if ((key && tr === 1) || !cur || ms - base > 30000) {
+      if (cur) cl.push(el('1F43B675', ...cur));
+      base = ms;
+      cur = [el('E7', ms)];
+    }
+    const rel = ms - base;
+    cur.push(el('A3', cat([new Uint8Array([0x80 | tr, (rel >> 8) & 255, rel & 255, key ? 0x80 : 0]), data])));
+  });
+  // Opus 的头: "OpusHead", 版本 1, 双声道, 前补 312, 48000, 增益 0, 映射 0
+  const head = new Uint8Array([
+    79, 112, 117, 115, 72, 101, 97, 100, 1, 2, 0x38, 1, 0x80, 0xbb, 0, 0, 0, 0, 0
+  ]);
+  if (cur) cl.push(el('1F43B675', ...cur));
+  return cat([
+    el(
+      '1A45DFA3',
+      el('4286', 1),
+      el('42F7', 1),
+      el('42F2', 4),
+      el('42F3', 8),
+      el('4282', 'webm'),
+      el('4287', 4),
+      el('4285', 2)
+    ),
+    el(
+      '18538067',
+      el(
+        '1549A966',
+        el('2AD7B1', 1e6),
+        el('4489', f64(dur * 1000)),
+        el('4D80', 'Colony 视频引擎'),
+        el('5741', 'Colony 视频引擎')
+      ),
+      el(
+        '1654AE6B',
+        el('AE', el('D7', 1), el('73C5', 1), el('83', 1), el('86', codec),
+          el('E0', el('B0', W), el('BA', H))),
+        ...(sound
+          ? [el('AE', el('D7', 2), el('73C5', 2), el('83', 2), el('86', 'A_OPUS'), el('63A2', head),
+              el('E1', el('B5', f64(48000)), el('9F', 2)))]
+          : [])
+      ),
+      ...cl
+    ),
+  ]);
+}
+async function exportVideo(onp) {
+  if (!('VideoEncoder' in window)) throw new Error('这个浏览器没有 WebCodecs, 导不了视频');
+  const fps = film.fps || 30,
+    [W, H] = film.size || [W0, H0],
+    n = Math.round(total * fps),
+    off = document.createElement('canvas');
+  off.width = W;
+  off.height = H;
+  let codec = 'vp09.00.10.08',
+    bad;
+  if (!(await VideoEncoder.isConfigSupported({ codec, width: W, height: H })).supported) codec = 'vp8';
+  const chunks = [],
+    enc = new VideoEncoder({
+      error: e => {
+        bad = e;
+      },
+      output: c => {
+        const b = new Uint8Array(c.byteLength);
+        c.copyTo(b);
+        chunks.push([c.timestamp, c.type === 'key', b]);
+      },
+    });
+  enc.configure({ codec, width: W, height: H, bitrate: 4e6, framerate: fps });
+  for (let i = 0; i < n && !bad; i++) {
+    paint(off.getContext('2d'), W, H, i / fps);
+    const f = new VideoFrame(off, {
+      timestamp: Math.round((i * 1e6) / fps),
+      duration: Math.round(1e6 / fps),
+    });
+    enc.encode(f, { keyFrame: i % (fps * 2) === 0 });
+    f.close();
+    if (enc.encodeQueueSize > 6) await new Promise(r => enc.addEventListener('dequeue', r, { once: true }));
+    if (i % 10 === 0 && onp) {
+      onp(i / n);
+      await new Promise(r => setTimeout(r));
+    }
+  }
+  await enc.flush();
+  enc.close();
+  if (bad) throw bad;
+  let sound = null;
+  exportVideo.said = [];
+  if ('AudioEncoder' in window) {
+    const t = await soundtrack();
+    exportVideo.said = t.said;
+    sound = await opus(t.buf);
+  } else exportVideo.said.push('这个浏览器编不了声音, 导出的视频没有声音');
+  return new Blob([webm(chunks, W, H, codec === 'vp8' ? 'V_VP8' : 'V_VP9', total, sound)], {
+    type: 'video/webm'
+  });
+}
+
+// ═ 播放器 ═
+function load(data) {
+  // 换一部片子: 数据进来先自检, 结果挂在「自检」键上
+  film = data;
+  S = Object.assign({}, BASE, data.style, {
+    roles: Object.assign({}, BASE.roles, (data.style || {}).roles),
+    rules: Object.assign({}, BASE.rules, (data.style || {}).rules),
+  });
+  let t = 0;
+  scenes = data.scenes.map(sc =>
+    Object.assign({}, sc, { _start: t, _end: (t += sc.dur), _parts: parts(sc) })
+  );
+  total = t;
+  document.title = data.title || '视频';
+  $('track')
+    .querySelectorAll('i')
+    .forEach(i => i.remove());
+  scenes.forEach(sc => {
+    const i = $('track').appendChild(document.createElement('i'));
+    i.style.left = (sc._start / total) * 100 + '%';
+    i.title = sc.name || sc.title || '';
+  });
+  const r = check(),
+    错 = r.filter(x => x.级 === '错').length;
+  $('lint').textContent = 错 ? '⚠ 自检 ' + 错 + ' 处' : '✓ 自检';
+  $('lint').style.color = 错 ? S.danger : '';
+  $('panel').textContent = r.length
+    ? r.map(x => (x.级 === '错' ? '✗ ' : '· ') + x.说).join('\n')
+    : '自检全过: 字都放得下, 没有叠在一起, 线没穿过字。';
+  seek(0);
+  playing = true;
+  return r;
+}
+function size() {
+  const W = innerWidth,
+    H = innerHeight - 44,
+    d = devicePixelRatio || 1;
+  cv.width = Math.round(W * d);
+  cv.height = Math.round(H * d);
+  cv.style.width = W + 'px';
+  cv.style.height = H + 'px';
+  show();
+}
+function show() {
+  paint(cv.getContext('2d'), cv.width, cv.height, T);
+  $('fill').style.width = (T / total) * 100 + '%';
+  const m = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  $('time').textContent = m(T) + ' / ' + m(total);
+  $('pp').textContent = playing ? '❚❚' : '▶';
+}
+function seek(t) {
+  T = clamp(t, 0, total);
+  playing = false;
+  show();
+  return T;
+}
+function tick(now) {
+  if (playing) {
+    T += Math.min(0.1, (now - lastNow) / 1000);
+    if (T >= total) {
+      T = total;
+      playing = false;
+    }
+    show();
+  }
+  lastNow = now;
+  requestAnimationFrame(tick);
+}
+const toggle = () => {
+  if (T >= total) T = 0;
+  playing = !playing;
+  show();
+};
+$('pp').onclick = toggle;
+cv.onclick = toggle;
+addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    toggle();
+  }
+});
+$('track').onpointerdown = e => {
+  const go = ev => {
+    const r = $('track').getBoundingClientRect();
+    seek(((ev.clientX - r.left) / r.width) * total);
+  };
+  go(e);
+  $('track').onpointermove = ev => {
+    if (ev.buttons) go(ev);
+  };
+};
+$('lint').onclick = () => {
+  $('panel').style.display = $('panel').style.display === 'block' ? 'none' : 'block';
+};
+$('exp').onclick = async () => {
+  const b = $('exp'),
+    was = playing;
+  playing = false;
+  b.disabled = true;
+  try {
+    const v = await exportVideo(p => {
+      b.textContent = '导出 ' + Math.round(p * 100) + '%';
+    });
+    const url = URL.createObjectURL(v);
+    $('panel').innerHTML =
+      '<b>导出好了</b>(' +
+      (v.size / 1048576).toFixed(1) +
+      ' MB, ' +
+      (film.size || [W0, H0]).join('×') +
+      ')<br>' +
+      exportVideo.said.join('<br>') +
+      '<br><video src="' +
+      url +
+      '" controls style="width:100%;margin-top:8px"></video><br><a download="' +
+      (film.title || '视频') +
+      '.webm" href="' +
+      url +
+      '" style="color:' +
+      S.accent +
+      '">下载 .webm</a>';
+    $('panel').style.display = 'block';
+    window.lastExport = v;
+  } catch (e) {
+    $('panel').textContent = '导出失败: ' + e.message;
+    $('panel').style.display = 'block';
+  }
+  b.textContent = '导出视频';
+  b.disabled = false;
+  playing = was;
+};
+Object.assign(window, { seek, check, load, exportVideo, getFilm: () => film, help: () => HELP });
+addEventListener('resize', size);
+(async () => {
+  // 在 Colony 里: 应用自己存的片子(store 键 film)优先, 没有就放文件里带的这部
+  let data = JSON.parse($('film').textContent);
+  try {
+    if (window.colony && colony.store) {
+      const v = await colony.store.get({ key: 'film' });
+      if (v && v.scenes) data = v;
+    }
+  } catch (e) {}
+  load(data);
+  size();
+  playing = true;
+  requestAnimationFrame(n => {
+    lastNow = n;
+    requestAnimationFrame(tick);
+  });
+})();
+</script>
+</body></html>
