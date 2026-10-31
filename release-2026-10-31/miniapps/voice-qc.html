@@ -1,0 +1,127 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>配音质检</title><meta name="description" content="工作流节点: 剧本 JSON + 角色 → 多角色逐句配音、转文字逐字对齐切句、音高查串音色 → 每句音频、全片试听、质检报告"></head><body style="margin:0;padding:18px;background:#111;color:#ddd;font:15px/1.6 system-ui;white-space:pre-wrap"><div id="v">🎙 配音质检: 等工作流送剧本来</div><script>
+function levelBuf(buf, trim) {
+  // 响度拉齐(说话部分 RMS 到约 -18 dBFS); trim: 首尾静音修到 0.05 / 0.12 秒
+  const R = buf.sampleRate, d = buf.getChannelData(0), win = Math.round(R * 0.02); let s = 0, n = 0, first = -1, last = 0;
+  for (let i = 0; i + win <= d.length; i += win) { let e = 0; for (let j = 0; j < win; j++) e += d[i + j] * d[i + j]; e = Math.sqrt(e / win); if (e > 0.01) { s += e * e; n++; if (first < 0) first = i; last = i + win; } }
+  if (!n) return buf;
+  const g = Math.min(4, 0.125 / Math.sqrt(s / n)), a = trim ? Math.max(0, first - Math.round(R * 0.05)) : 0, b = trim ? Math.min(d.length, last + Math.round(R * 0.12)) : d.length;
+  const out = new AudioBuffer({ length: b - a, sampleRate: R, numberOfChannels: 1 }), o = out.getChannelData(0);
+  for (let i = a; i < b; i++) o[i - a] = Math.max(-0.98, Math.min(0.98, d[i] * g));
+  return out;
+}
+function sliceBuf(buf, t0, t1) { const R = buf.sampleRate, a = Math.max(0, Math.round(t0 * R)), b = Math.min(buf.length, Math.round(t1 * R)), out = new AudioBuffer({ length: Math.max(1, b - a), sampleRate: R, numberOfChannels: 1 }); out.getChannelData(0).set(buf.getChannelData(0).subarray(a, b)); const o = out.getChannelData(0), fi = Math.min(o.length, Math.round(R * 0.015)), fo = Math.min(o.length, Math.round(R * 0.08)); for (let i = 0; i < fi; i++) o[i] *= i / fi; for (let i = 0; i < fo; i++) o[o.length - 1 - i] *= i / fo; return out; }
+function wavOf(buf) { const sr = buf.sampleRate, d = buf.getChannelData(0), n = d.length, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, s) => [...s].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0))); w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true); for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, d[i])) * 32767, true); return new Blob([b], { type: 'audio/wav' }); }
+async function charTimes(buf) {
+  // 转文字带逐字时间(ai.transcribe timestamps): [{ch, t0, t1}] 秒; 一个片段里几个字就平分
+  let r, k = 0; for (;;) { try { r = await colony.call('ai.transcribe', { provider: DEF.asr.provider, model: DEF.asr.model, audio: (await dataUrl(wavOf(buf))).split(',')[1], mimeType: 'audio/wav', language: 'zh', timestamps: true }); break; } catch (e) { if (++k > 3) throw e; await new Promise(z => setTimeout(z, 1500 * k)); } }
+  const out = []; (r.words || []).forEach(w => { const cs = normT(w.text), d = (w.end - w.start) / Math.max(1, cs.length); cs.forEach((ch, i) => out.push({ ch, t0: w.start + d * i, t1: w.start + d * (i + 1) })); });
+  return out;
+}
+async function alignLines(buf, texts) {
+  // 一整段念好的对白切回一句一段: 转文字拿到每个字的时间 → 稿子和听到的字逐字对齐(编辑距离) → 每句第一个字的开口、最后一个字的收尾就是这句的起止。
+  // 回每句 {t0, t1, heard, sim}: sim 是这句听到的和稿子的相似度, 低了就是漏念、念错或多念
+  const cs = await charTimes(buf); if (!cs.length) return null;
+  const S = texts.map(normT), flat = [], own = []; S.forEach((s, i) => s.forEach(ch => { flat.push(ch); own.push(i); }));
+  const A = flat, B = cs.map(x => x.ch), m = A.length, n = B.length, D = Array.from({ length: m + 1 }, (_, i) => { const r = new Int32Array(n + 1); r[0] = i; return r; });
+  for (let j = 1; j <= n; j++) D[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + (A[i - 1] === B[j - 1] ? 0 : 1));
+  const hit = Array.from({ length: S.length }, () => []), extra = []; let i = m, j = n;   // 回溯: 稿子的字 ↔ 听到的字
+  while (i > 0 || j > 0) { if (i > 0 && j > 0 && D[i][j] === D[i - 1][j - 1] + (A[i - 1] === B[j - 1] ? 0 : 1)) { hit[own[i - 1]].push(j - 1); i--; j--; } else if (i > 0 && D[i][j] === D[i - 1][j] + 1) i--; else { extra.push(j - 1); j--; } }
+  // 多出来的字(稿子里没有的)归给时间上最近的那句
+  const span = hit.map(h => h.length ? [Math.min(...h), Math.max(...h)] : null);
+  extra.forEach(k => { let best = -1, bd = 1e9; span.forEach((s, q) => { if (!s) return; const d = k < s[0] ? s[0] - k : k > s[1] ? k - s[1] : 0; if (d < bd) { bd = d; best = q; } }); if (best >= 0 && bd <= 2) { span[best][0] = Math.min(span[best][0], k); span[best][1] = Math.max(span[best][1], k); } });
+  return span.map((s, q) => {
+    if (!s) return { t0: 0, t1: 0, heard: '', sim: 0 };
+    const pv = span.slice(0, q).reverse().find(Boolean), nx = span.slice(q + 1).find(Boolean);
+    const a0 = cs[s[0]].t0, a1 = cs[s[1]].t1, lo = pv ? cs[pv[1]].t1 : 0, hi = nx ? cs[nx[0]].t0 : buf.duration;
+    const h = cs.slice(s[0], s[1] + 1).map(x => x.ch), l = h.filter((ch, k) => S[q].includes(ch)).length;
+    return { t0: Math.max(lo, a0 - 0.12), t1: Math.min(hi, a1 + 0.25), heard: h.join(''), sim: +(2 * Math.min(l, S[q].length) / (S[q].length + h.length || 1)).toFixed(2) };
+  });
+}
+function pitchOf(b) {
+  // 基频中位数(Hz): 每 40ms 一帧自相关, 只算有声帧; 男声约 80–150, 女声约 180–350
+  const R = b.sampleRate, d = b.getChannelData(0), W = Math.round(R * 0.04), lo = Math.round(R / 400), hi = Math.round(R / 70), fs = [];
+  for (let s = 0; s + W + hi < d.length; s += W) {
+    let e = 0; for (let i = 0; i < W; i++) e += d[s + i] * d[s + i]; if (e / W < 0.0015) continue;
+    let best = 0, bl = 0; for (let l = lo; l <= hi; l++) { let x = 0, n2 = 0; for (let i = 0; i < W; i++) { x += d[s + i] * d[s + i + l]; n2 += d[s + i + l] * d[s + i + l]; } x /= Math.sqrt(e * n2) || 1; if (x > best) { best = x; bl = l; } }
+    if (best > 0.6) fs.push(R / bl);
+  }
+  fs.sort((a, b) => a - b); return fs.length ? fs[fs.length >> 1] : 0;
+}
+function wrongVoice(rows, hz) {
+  // 回被念成别人的那几句的下标: 和自己角色(其余句的中位数)差 1.4 倍以上, 又更接近另一个角色。同性别的角色差得不够远, 不会误判
+  const med = a => { const s = a.filter(Boolean).sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+  const who = [...new Set(rows.map(r => r.who))], m = Object.fromEntries(who.map(w => [w, med(rows.map((r, i) => r.who === w ? hz[i] : 0))]));
+  return rows.map((r, i) => i).filter(i => {
+    const h = hz[i], own = m[rows[i].who]; if (!h || !own) return false;
+    const far = Math.abs(Math.log(h / own)), near = Math.min(...who.filter(w => w !== rows[i].who && m[w]).map(w => Math.abs(Math.log(h / m[w]))));
+    return far > Math.log(1.4) && near < far;
+  });
+}
+
+const DEF = { provider: '阶跃', model: 'stepaudio-3-gen-preview', asr: { provider: '阶跃', model: 'stepaudio-2.5-asr' },
+  room: '几个人在安静的室内面对面轻松聊天, 自然接话, 有真实的笑声和气口; 全程没有背景音乐, 没有音效; 每个人的音色从头到尾保持不变' };
+const normT = s => [...String(s).replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, '').toLowerCase()];
+const dataUrl = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+const show = s => { document.getElementById('v').textContent = s; };
+const J = x => { if (x && typeof x === 'object') return x; let s = String(x || '').replace(/^\s*```[a-z]*\s*/i, '').replace(/\s*```\s*$/, ''); return JSON.parse(s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1)); };
+const med = a => { const s = a.filter(Boolean).sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+function concat(bufs, gaps, R) {
+  const n = bufs.reduce((s, b, i) => s + b.length + Math.round((gaps[i] || 0) * R), 0), out = new AudioBuffer({ length: Math.max(1, n), sampleRate: R, numberOfChannels: 1 }), o = out.getChannelData(0);
+  let p = 0; bufs.forEach((b, i) => { o.set(b.getChannelData(0), p); p += b.length + Math.round((gaps[i] || 0) * R); }); return out;
+}
+// 剧本 JSON → 按场拼段(每段 ≤170 字, params.chunk 可调; 整集一段音色最稳, 但台词+语气合计要 ≤1000 字, 一场不拆) → 每段一次多角色念完 → 转文字逐字对齐切回一句一段 → 漏念/念错/串音色就整段重念(最多 3 次)
+colony.expose('node:invoke', async ({ inputs, params }) => {
+  const sc = J(inputs.script), cast = J(inputs.cast || '{}'), names = Object.keys(cast);
+  if (!names.length) throw new Error('没给 cast: {名字: {voice: 角色描述}}');
+  const roles = names.map(k => ({ name: k, description: cast[k].voice || cast[k] }));
+  const sex = Object.fromEntries(names.map(k => [k, /男/.test(roles.find(r => r.name === k).description) ? 'm' : /女/.test(roles.find(r => r.name === k).description) ? 'f' : '']));
+  const ns = t => normT(t).length;
+  const scs = (sc.scenes || []).filter(s => (s.lines || []).length).map((s, si) => ({ s, rows: s.lines.map((l, li) => ({ sid: s.id || 's' + (si + 1), id: (s.id || 's' + (si + 1)) + '.l' + (li + 1), who: cast[l.who] ? l.who : names[0], text: l.say || l.text, tone: l.tone || '' })) }));
+  if (!scs.length) throw new Error('剧本里没有台词');
+  const parts = []; let cur = null;
+  for (const x of scs) { const n = x.rows.reduce((s, r) => s + ns(r.text), 0); if (!cur || cur.n + n > (+params.chunk || 170)) parts.push(cur = { n: 0, scs: [] }); cur.scs.push(x); cur.n += n; }
+  const ac = new OfflineAudioContext(1, 1, 24000), out = [], probs = [], log = [], t0 = Date.now();
+  for (const [pi, part] of parts.entries()) {
+    const rows = part.scs.flatMap(x => x.rows);
+    const body = { provider: params.provider || DEF.provider, model: params.model || DEF.model, format: 'wav', text: rows.map(r => r.text).join(' '), roles,
+      scripts: rows.map(r => ({ speaker: r.who, text: (r.tone ? '(' + r.tone + ')' : '') + r.text })), instructions: params.room || DEF.room };
+    let best = null, why = '';
+    for (let k = 1; k <= 3; k++) {
+      show('配音 第 ' + (pi + 1) + '/' + parts.length + ' 段 · ' + rows.length + ' 句' + (k > 1 ? ' · 重念(' + why + ')' : ''));
+      const r = await colony.call('ai.speak', body);
+      const w = levelBuf(await ac.decodeAudioData(await (await fetch('data:' + (r.mimeType || 'audio/wav') + ';base64,' + r.data)).arrayBuffer()), false);
+      if (w.duration < part.n * 0.13) { why = '才 ' + w.duration.toFixed(0) + ' 秒, 念少了'; continue; }
+      let al; try { al = await alignLines(w, rows.map(r => r.text)); } catch (e) { why = e.message; continue; }
+      if (!al) { why = '切不开'; continue; }
+      const hz = al.map(x => x.t1 > x.t0 ? pitchOf(sliceBuf(w, x.t0, x.t1)) : 0), swapped = new Set(wrongVoice(rows, hz));
+      const ms = Object.fromEntries(names.map(n => [n, med(rows.map((r, i) => r.who === n ? hz[i] : 0))]));
+      const m = names.filter(n => sex[n] === 'm' && ms[n]), f = names.filter(n => sex[n] === 'f' && ms[n]);
+      if (m.length && f.length && Math.max(...m.map(n => ms[n])) * 1.25 > Math.min(...f.map(n => ms[n])))
+        throw new Error('男女声分不开(' + names.map(n => n + ' ' + Math.round(ms[n]) + 'Hz').join(' / ') + '): 角色描述多半没送到厂商, 先查 AI 配置里语音这一类的请求体有没有 roles/scripts');
+      const bad = al.map((x, i) => x.sim < 0.6 ? i : -1).filter(i => i >= 0), score = bad.length + swapped.size;
+      if (!best || score < best.score) best = { w, al, hz, swapped, bad, score, ms };
+      if (!score) break;
+      why = [bad.length && bad.length + ' 句没念对', swapped.size && swapped.size + ' 句串了音色'].filter(Boolean).join(', ');
+    }
+    if (!best) throw new Error('第 ' + (pi + 1) + ' 段 3 次都没念成: ' + why);
+    log.push('第 ' + (pi + 1) + ' 段 ' + rows.length + ' 句 ' + best.w.duration.toFixed(1) + 's · ' + names.map(n => n + ' ' + Math.round(best.ms[n]) + 'Hz').join(' / '));
+    for (const [i, row] of rows.entries()) {
+      const x = best.al[i], b = levelBuf(sliceBuf(best.w, x.t0, x.t1), true);
+      const nx = rows[i + 1], gap = nx && nx.sid === row.sid ? +Math.min(nx.who === row.who ? 0.25 : 0.45, Math.max(0.1, best.al[i + 1].t0 - x.t1)).toFixed(2) : null;
+      const ref = await colony.call('workflow.assetSave', { data: await dataUrl(wavOf(b)), mimeType: 'audio/wav', name: row.id + '.wav' });
+      out.push({ id: row.id, who: row.who, text: row.text, tone: row.tone, dur: +b.duration.toFixed(2), gap, hz: Math.round(best.hz[i]), sim: x.sim, audio: ref, buf: b });
+      if (best.bad.includes(i)) probs.push(row.id + ' 没念对(听到「' + x.heard + '」)');
+      if (best.swapped.has(i)) probs.push(row.id + ' ' + row.who + ' 串了音色(' + Math.round(best.hz[i]) + 'Hz)');
+    }
+  }
+  const R = 24000, pv = concat(out.map(x => x.buf), out.map((x, i) => x.gap ?? (i + 1 < out.length ? 0.7 : 0)), R);
+  const media = await colony.call('workflow.assetSave', { data: await dataUrl(wavOf(pv)), mimeType: 'audio/wav', name: (sc.title || '配音') + ' · 全片试听.wav' });
+  const lines = out.map(({ buf, ...x }) => x), total = pv.duration;
+  const byWho = names.map(n => n + ' 中位 ' + Math.round(med(lines.filter(l => l.who === n).map(l => l.hz))) + 'Hz').join(' / ');
+  const report = (probs.length ? '⚠ ' : '✅ ') + lines.length + ' 句 · 全片 ' + total.toFixed(1) + ' 秒 · ' + byWho + ' · 用时 ' + Math.round((Date.now() - t0) / 1000) + ' 秒\n' + log.join('\n') + (probs.length ? '\n问题:\n' + probs.join('\n') : '\n逐句对齐全部通过, 没有串音色');
+  show(report);
+  return { outputs: { media, report, lines: JSON.stringify(lines), pass: !probs.length, seconds: +total.toFixed(1) } };
+});
+
+</script></body></html>

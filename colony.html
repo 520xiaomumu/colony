@@ -12,7 +12,7 @@ font-family:-apple-system,"PingFang SC",sans-serif}
 </style>
 </head>
 <body>
-<!--COLONY-LINEAGE {"id":"f1bdc992798b1fca","parent":"dev","blocks":[{"id":"petri:ai","version":6},{"id":"petri:agent","version":1},{"id":"petri:bridge","version":1},{"id":"petri:ui","version":1},{"id":"petri:porter","version":1},{"id":"petri:code","version":1},{"id":"petri:workflow","version":1},{"id":"petri:plugin-manager","version":2}]}-->
+<!--COLONY-LINEAGE {"id":"6e6396c0341f1b0c","parent":"f1bdc992798b1fca","blocks":[{"id":"petri:ai","version":6},{"id":"petri:agent","version":1},{"id":"petri:bridge","version":1},{"id":"petri:ui","version":1},{"id":"petri:porter","version":1},{"id":"petri:code","version":1},{"id":"petri:workflow","version":1},{"id":"petri:plugin-manager","version":2}]}-->
 <div id="colony-root"></div>
 <script id="stem" type="colony/stem">
 // ✂ 跑块
@@ -150,7 +150,8 @@ const call = (path, args, meta) => new Promise(res => {
     fail(话);
   }
   // ✂ 隔离窗
-  if (meta?.frame && !c.frames) fail('隔离窗里不能调用 ' + path);
+  // 完全访问的应用(用户在窗上点开, 挂载方写进 context.trust; 应用自己改不了)和块一样能调全部能力
+  if (meta?.frame && !c.frames && !meta.context?.trust) fail('隔离窗里不能调用 ' + path + '(要用就在应用窗上点「🔒 隔离运行」换成完全访问)');
   // ✂ 隔离窗 完
   const a = args ?? {}, s = c.schema || {}, 缺 = Object.keys(s).filter(k => a[k] === undefined
     && typeof s[k] === 'string' && !/\?$/.test(s[k].split('(')[0].trim()));
@@ -183,7 +184,8 @@ const memStore = () => {
     get: async k => 拷(m.get(k)), set: async (k, v) => { m.set(k, 拷(v)); }, del: async k => { m.delete(k); },
     clear: async () => { m.clear(); },
     list: async p => [...m].filter(([k]) => !p || String(k).startsWith(p))
-      .map(([key, value]) => ({ key, value: 拷(value) }))
+      .map(([key, value]) => ({ key, value: 拷(value) })),
+    keys: async p => [...m.keys()].filter(k => !p || String(k).startsWith(p))
   };
 };
 const idbStore = name => {
@@ -208,13 +210,14 @@ const idbStore = name => {
     list: p => op('readonly', s => {
       const r = p ? IDBKeyRange.bound(p, p + '\uffff') : undefined; // 只读这个前缀的那一段
       return { ks: s.getAllKeys(r), vs: s.getAll(r) };
-    }).then(r => r.ks.result.map((k, i) => ({ key: k, value: r.vs.result[i] })))
+    }).then(r => r.ks.result.map((k, i) => ({ key: k, value: r.vs.result[i] }))),
+    // 只要名单不读值: 大库里快几百倍(口袋先拿它画地图, 大小再补)
+    keys: p => op('readonly', s => s.getAllKeys(p ? IDBKeyRange.bound(p, p + '\uffff') : undefined))
   };
 };
 const openStore = name => typeof indexedDB !== 'undefined' ? idbStore(name) : memStore();
 // ✂ 键值库 完
 X({ idbStore, memStore });
-
 // ═ 块接口 · 跟着: 能力树, 存储 ═
 // 块代码是 块参 这几个参数的函数体, 接口全在 ctx(id, root, kv, provide, call, cleanup)和它自己的 colony(call, has, 单独):
 // 能不能调、去调都先找自己名下的, 不是页面上那个全局(单独 照页面上的); Colony 里还有一问 停着(见装载)。kv 是全库共享,
@@ -245,7 +248,7 @@ const guardKv = store => {
   const chk = k => String(k).startsWith('block:')
     ? Promise.reject(new Error('块记录只能经 stem.setBlock 改, 不能直接写 kv: ' + k)) : Promise.resolve();
   return { get: k => store.get(k), set: (k, v) => chk(k).then(() => store.set(k, v)),
-    del: k => chk(k).then(() => store.del(k)), list: p => store.list(p) };
+    del: k => chk(k).then(() => store.del(k)), list: p => store.list(p), keys: p => store.keys(p) };
 };
 // 块代码顶上又声明了块参的名字(const colony = …), 引擎只说重名, 这里说清那是 Stem 给的。重名: 引擎说重名的是哪个名字
 const 重名 = e => /(?:Identifier '|redeclaration of (?:formal parameter |\S+ )?|twice: ')([^'\s]+)/
@@ -2065,7 +2068,9 @@ const 多模态 = {   // 空壳总在(登记能力里会碰到这个名字), 里
   模型(p, 类, a) {
     return a.model || p.modelOf?.[类] || 模型调用.没选(p, 模型调用.适配(p).类型[类].名);
   },
-  // 记下的写法 → 标准写法 → 那一行的「备」, 404/400 才试下一种, 试通了记进改法
+  // 记下的写法 → 标准写法 → 那一行的「备」, 404/400 才试下一种。试通了别种写法, 只在还没记过写法、
+  // 或记下的那条 404(接口没了)时写回: 记下的回 400 多半是这次的内容被拒, 不能拿字段更少的备用写法盖掉它
+  // (阶跃 tts 就这样两次丢了 roles, 男女角色念成一个声音)
   async 调(p, 类, a) {
     const 记 = p.adapt?.[类], 串 = JSON.stringify, 法们 = [记 || {}, {}].concat(模型调用.适配(p).类型[类].备 || [])
       .filter((x, i, all) => all.findIndex(y => 串(y) === 串(x)) === i);
@@ -2073,7 +2078,8 @@ const 多模态 = {   // 空壳总在(登记能力里会碰到这个名字), 里
     for (const 法 of 法们) {
       try {
         const r = await this.发(p, 类, a, 法);
-        if (法 !== 法们[0]) await 厂商配置.更新(p.id, { adapt: { [类]: Object.keys(法).length ? 法 : null } });
+        if (法 !== 法们[0] && (!记 || 错.status === 404))
+          await 厂商配置.更新(p.id, { adapt: { [类]: Object.keys(法).length ? 法 : null } });
         return r;
       } catch (e) {
         错 = 错 || e;
@@ -2174,20 +2180,27 @@ const 视频 = 协议适配.加类('video', {
   后缀: '/audio/transcriptions',
   // 一段空 wav
   测: { audio: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=', mimeType: 'audio/wav' },
-  请求: (a, model) => 协议适配.表单({
+  请求: (a, model) => 协议适配.表单(Object.assign({
     file: typeof a.audio === 'string' ? { data: a.audio, mimeType: a.mimeType } : a.audio,
     model, language: a.language, prompt: a.prompt,
-  }, 'audio/webm'),
-  回复: async (res, p) => {   // 有的厂商回纯文本; 回事件流的取最后一条(带全文)
+  }, a.timestamps ? { response_format: 'verbose_json', 'timestamp_granularities[]': 'word' } : {}), 'audio/webm'),
+  回复: async (res, p) => {   // 有的厂商回纯文本; 回事件流的取最后一条(带全文)。带了逐字/逐词时间的顺手收成 words
     const t = await res.text();
     if (!/^\s*(\{|data:)/.test(t)) return { text: t };
-    return 协议适配.取('转录文字', j => typeof j.text === 'string' && { text: j.text })(t, p);
+    const r = await 协议适配.取('转录文字', j => typeof j.text === 'string' && { text: j.text })(t, p), words = [];
+    if (/^\s*data:/.test(t)) t.split('\n').forEach(l => {   // 事件流: delta 行带 start_time / end_time(毫秒)
+      if (!l.startsWith('data:')) return; let m; try { m = JSON.parse(l.slice(5)); } catch (e) { return; }
+      if (m && m.delta != null && m.start_time != null) words.push({ text: m.delta, start: m.start_time / 1000, end: m.end_time / 1000 });
+    });
+    else { try { const j = JSON.parse(t); (j.words || (j.segments || []).flatMap(s => s.words || [])).forEach(w => words.push({ text: w.word ?? w.text, start: w.start, end: w.end })); } catch (e) {} }
+    return words.length ? Object.assign(r, { words }) : r;
   },
   // 别种写法: 事件流识别接口(JSON 进, data: 行出), 录音要 wav
   备: [{ path: '/audio/asr/sse', body: { audio: { data: '{audio}', input: { transcription: { model: '{model}',
-    language: '{language}' }, format: { type: 'wav' } } } } }],
-  能力: 'ai.transcribe', 说明: '语音转文字: 回 {text}',
-  形状: { audio: 'string(base64)', mimeType: 'string?(默认 audio/webm)', language: 'string?', prompt: 'string?' },
+    language: '{language}', enable_timestamp: '{timestamps}' }, format: { type: 'wav' } } } } }],
+  能力: 'ai.transcribe', 说明: '语音转文字: 回 {text}; 给 timestamps: true 还回 words: [{text, start, end}](秒, 厂商给了才有)',
+  形状: { audio: 'string(base64)', mimeType: 'string?(默认 audio/webm)', language: 'string?', prompt: 'string?',
+    timestamps: 'boolean?(要逐字/逐词时间)' },
 });
 // ✂ 转录 完
 // ✂ 语音 · 要: 非文本
@@ -3173,6 +3186,7 @@ const AG = {
   busy: false,   // 引擎在跑
   live: { text: '' },   // 正在流出的回答
   brain: null,   // {provider, model, think}, 空就用 AI 配置里的默认
+  换: null,   // 这一轮临时换上的大脑 {provider, model}: 原来选的连断时由 引擎.换大脑 填, 一轮完就清
   disposed: false,   // 本实例已被卸载(多半是自己被热替换了)
 };
 const 切 = (s, n) => s.slice(0, /[\uD800-\uDBFF]/.test(s[n - 1] || '') ? n - 1 : n);   // 不截在 emoji 中间
@@ -3305,7 +3319,7 @@ const 骨架 = {
 <button class="ag-btn" id="agent-sess-cur" data-a="drop" title="切换会话"></button>
 <button class="ag-btn" data-a="new">+ 新会话</button>
 <button class="ag-btn" data-a="zip" title="压缩: 最近两问留原文, 更早的写成摘要(原文不删)">🗜</button>
-<span id="agent-meter" title="每次发给模型多少(连同系统说明和工具说明, 本地估) / 上限"></span><div id="agent-sess-dd" hidden></div>
+<span id="agent-meter" title="每次发给模型多少(连同系统说明和工具说明, 本地估) / 上限; 缓存 = 上一步发过去的里命中前缀缓存的比例(厂商报的), 越高越快越省"></span><div id="agent-sess-dd" hidden></div>
 </div><div id="agent-brain"></div><div id="agent-convo"></div><div id="agent-status"></div>
 <div id="agent-atts"></div><div class="ag-row"><button id="agent-attach" title="加文件或图片">📎</button>
 <textarea id="agent-input" placeholder="对全能 agent 说话; 回车发送, Shift+回车换行"></textarea>
@@ -3355,9 +3369,10 @@ const 骨架 = {
     clearTimeout(骨架.statusT);
     if (!留) 骨架.statusT = setTimeout(() => { el.textContent = ''; }, 3000);
   },
-  用量(used, budget) {
+  用量(used, budget, 账) { // 账: 上一步厂商报的用量, 有就带上缓存命中率
     const el = 骨架.$('agent-meter'), pct = Math.round(used / budget * 100) + '%';
-    if (el) el.textContent = `${(used / 1000).toFixed(1)}k / ${Math.round(budget / 1000)}k · ${pct}`;
+    if (el) el.textContent = `${(used / 1000).toFixed(1)}k / ${Math.round(budget / 1000)}k · ${pct}`
+      + (账 && 账.入 ? ` · 缓存 ${Math.round(账.缓存 / 账.入 * 100)}%` : '');
   },
   两下(b, fn) {
     const 回 = () => {
@@ -3767,9 +3782,47 @@ const 渲染 = {
     });
     return body + (extra ? `<div class="ag-parts">${extra}</div>` : '');
   },
+  // 对话栏里的媒体只挂小的: 图先空着, 解码成 ≤480 宽的缩略图再显示(缩略图按原图记一份), 点开才换原图, 再点换回;
+  // 音视频 preload=none, 按播放才加载。一整天的对话挂几十张 4K 截图也只占几十 MB, 不会把标签页撑爆
+  缩: new Map(),   // 原图(长度 + 尾部) → 缩略图 blob 网址, 最多 200 张
+  原: new Map(),   // 缩略图 blob 网址 → 原图, 点开时用
+  纹: src => src.length + ':' + src.slice(-64),
   media(mime, src) {
-    const tag = mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'img';
-    return `<${tag} class="ag-media" src="${esc(src)}"${tag === 'img' ? '>' : ` controls></${tag}>`}`;
+    if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+      const tag = mime.startsWith('video/') ? 'video' : 'audio';
+      return `<${tag} class="ag-media" src="${esc(src)}" preload="none" controls></${tag}>`;
+    }
+    const t = 渲染.缩.get(渲染.纹(src));
+    if (t) return `<img class="ag-media" src="${t}">`;
+    const id = 'agm' + Math.random().toString(36).slice(2, 9);
+    渲染.缩图(src).then(u => {
+      const el = document.getElementById(id);
+      if (el) { el.src = u; el.removeAttribute('id'); 渲染.down(); }
+    });
+    return `<img class="ag-media ag-thumb" id="${id}" alt="…">`;
+  },
+  async 缩图(src) { // 解码一次, 画小存成 webp(留透明); 失败就用原图(和改之前一样)
+    const k = 渲染.纹(src);
+    if (渲染.缩.has(k)) return 渲染.缩.get(k);
+    let u = src;
+    try {
+      const b = await createImageBitmap(await (await fetch(src)).blob());
+      const s = Math.min(1, 480 / b.width), w = Math.max(1, Math.round(b.width * s)), h = Math.max(1, Math.round(b.height * s));
+      if (s < 1) {
+        const c = new OffscreenCanvas(w, h);
+        c.getContext('2d').drawImage(b, 0, 0, w, h);
+        u = URL.createObjectURL(await c.convertToBlob({ type: 'image/webp', quality: 0.85 }));
+        渲染.原.set(u, src);
+      }
+      b.close();
+    } catch (e) {}
+    渲染.缩.set(k, u);
+    if (渲染.缩.size > 200) {
+      const [k0, u0] = 渲染.缩.entries().next().value;
+      渲染.缩.delete(k0);
+      if (u0.startsWith('blob:')) { 渲染.原.delete(u0); URL.revokeObjectURL(u0); }
+    }
+    return u;
   },
   tcard: (icon, name, t, key) => 渲染.行(icon, `${esc(name)} · ${String(t).length} 字`
     + `<a class="ag-dl" data-n="${esc(name)}" data-ref="${esc(key || '')}">⤓ 下载</a>`, '',
@@ -3809,7 +3862,11 @@ const 渲染 = {
       img = e.target.closest('img.ag-media');
     if (dl) return 渲染.下载(dl);
     if (line) 渲染.opened[line.parentNode.dataset.k] = line.parentNode.classList.toggle('open');
-    if (img) img.classList.toggle('big');
+    if (img) { // 点开换原图, 再点换回缩略图(原图不常驻)
+      const big = img.classList.toggle('big');
+      if (big && 渲染.原.has(img.src)) { img.dataset.t = img.src; img.src = 渲染.原.get(img.src); }
+      else if (!big && img.dataset.t) { img.src = img.dataset.t; delete img.dataset.t; }
+    }
   },
   async show(el) { // [[show:键]] 出屏: 读 kv, 媒体直接放, 文字做小卡
     const key = el.dataset.k;
@@ -3818,6 +3875,7 @@ const 渲染 = {
     if (!hit) {
       const v = await ctx.kv.get(key).catch(() => null);
       hit = 渲染.hitOf(v, key);
+      if (hit.src && /^image\//.test(hit.mime)) await 渲染.缩图(hit.src);   // 先做好缩略图, 画的时候直接用
       渲染.cache.delete(key);
       渲染.cache.set(key, hit);
       if (渲染.cache.size > 40) 渲染.cache.delete(渲染.cache.keys().next().value);
@@ -4098,7 +4156,7 @@ const 大脑 = {
   }),
   async 流(a) {
     const req = { messages: a.messages, tools: a.tools, stream: true, signal: a.signal, session: AG.sid,
-      ...AG.brain };   // 大脑行选的厂商、模型、思考档(on|off)
+      ...AG.brain, ...AG.换 };   // 大脑行选的厂商、模型、思考档(on|off)
     const it = await ctx.call('ai.chat', req).catch(e => {   // 单独导出、AI 停着时, 剪来的「登记能力」登记给 agent 自己
       throw /无此能力/.test(e.message) ? new Error('没有 AI 配置块在岗: 导入并启用 petri:ai, 配一个厂商') : e;
     });
@@ -4134,8 +4192,9 @@ const 系统提示 = async () => {
         + (技.length ? ' · 技能: ' + 技.map(s => `${s.name}(${s.when})`).join('、') : '');
     }).join('\n');
   } catch (e) { blocks = `(读不到块清单: ${e.message})`; }
-  const 读 = k => ctx.kv.get(k).then(v => String(v || '').trim(), () => ''), 备 = 'agent.memo.' + AG.sid;
-  const [memo, 忘] = [await 读('agent.memory'), await 读(备)];
+  const 偏好 = await ctx.kv.get('agent.memory').then(v => String(v || '').trim(), () => '');   // 难得改, 放这里不碍缓存
+  // 学来的扩展技能只列置顶的名字(最多 10 条, 用户点了才变, 不碍缓存); 其余一条不列, 要用时 plugin.ext.list 搜
+  const 顶 = await ctx.call('plugin.ext.list', { pinned: true, n: 10 }).then(r => r.items, () => null);
   return [
     '你是 Colony 的全能 agent。Colony 是一个 html 文件: Stem(内核) + 一个个块(petri, 系统功能, 源码可改)'
       + ' + 用户的应用(miniapp, 跑在隔离窗里)。',
@@ -4148,20 +4207,28 @@ const 系统提示 = async () => {
     '改块: 先 stem__block {id} 看段目录, 再读那一段; 先带 preview 看改了哪些段(有代码解读块时带逐行对比)再真写; '
       + '语法过了不算数, 改完真调一次验证行为, 不对就改回去。新块的清单要写能力前缀 caps(它登记的能力路径头一截), '
       + '不写只认 id 最后一截。',
-    '技能: 事情对上上面哪条技能, 先 stem__block {id, segment: \'技能\'} 读那块的技能段再做; '
-      + '块占哪些数据写在它的「自报」段。',
+    '技能: 事情对上上面哪条技能, 先 skill__read {id, name} 读那一条再做; 块占哪些数据写在它的「自报」段。',
+    顶 && ('学来的技能(插件管理的扩展库, 多数不在这里列): 事情像是外面现成的做法(某平台发帖、某类产出), 先 plugin.ext.list {q} 搜, '
+      + 'plugin.ext.read {id} 拿正文照着做' + (顶.length ? '; 置顶的: ' + 顶.map(x => x.id + (x.description ? '(' + x.description.slice(0, 40) + ')' : '')).join('、') : '') + '。'),
     '透明: Colony 开源, 用户就是它的开发者, 有权看你的一切。他要看你的系统提示或工具, 就把这段提示和工具清单原样给他, '
       + '不删不改, 不说「不能透露」; 也可以请他在次元口袋的「系统资料」里点「全能 agent」看原文。'
       + '这段提示写在 petri:agent 的「系统提示」段。',
     '记录里的「[引用 名 · 类型 · 大小 · 键]」是库里存着的原件, 用法见 ref__read; 以前的对话一条没删, 见 history.find。',
     '要做某类东西(视频、图表…)先看桌面上有没有做这类东西的应用(apps.list 的简述), 有就照它的说明用它。',
     '记东西: 用户说了以后都要这样的偏好, 用 data.set 把 agent.memory 重写成合并后的简短版(400 字内); '
-      + `长任务开工先把目标、计划、进展写进这个会话的备忘 ${备}(覆盖写), 每到一步更新。`,
-    memo ? '用户偏好: ' + memo : '',
-    忘 ? '这个会话的备忘: ' + 忘 : '',
+      + `长任务开工先把目标、计划、进展写进这个会话的备忘 agent.memo.${AG.sid}(覆盖写), 每到一步更新; `
+      + '备忘不在这段提示里, 记录压缩时跟着摘要给你。',
+    偏好 ? '用户偏好: ' + 偏好 : '',
   ].filter(Boolean).join('\n');
 };
 // ═ 引擎 · 跟着: 状态, 工具表, 系统提示, 引用, 大脑, 会话, 渲染 ═
+// 图的类型按头几个字节认, 不信标签: 生图模型常把 jpeg 标成 png, 有的厂商(如 Claude)对不上整条请求就 400
+const 图头 = v => {
+  const data = v.slice(v.indexOf(',') + 1), h = data.slice(0, 16);
+  const mimeType = h.startsWith('/9j/') ? 'image/jpeg' : h.startsWith('iVBOR') ? 'image/png' : h.startsWith('R0lGOD') ? 'image/gif'
+    : h.startsWith('UklGR') ? 'image/webp' : v.slice(5, v.search(/[;,]/)) || 'image/png';
+  return { mimeType, data };
+};
 // 一轮 = 请求 → 模型要用工具就并行执行、结果回灌 → 再请求, 直到它不再要工具。不解析文字, 不替模型判断对错
 const 引擎 = {
   最多轮: 50,
@@ -4176,6 +4243,7 @@ const 引擎 = {
   等锁: 15000,   // 接力时最多等别处放下这个会话的锁
   完: [],   // 一轮跑完挨个叫(朗读念结果、通话转告)
   压缩中: false,
+  歇: 0,   // 摘要没写成后歇几步再压: 写不成的模型每步都去压只是白花钱
   摘要模板: '把下面的对话压成一份接力摘要, 给接着干活的你自己看。按这七条写, 共不超过 1500 字, 不复述闲聊:\n'
     + '1 用户最终目标(尽量用原话)\n2 已完成的动作\n3 已读、已改的对象: 只写块名/段名和关键 ID, 改了什么以 code.versions 为准'
     + '(有代码解读块时)\n4 现在代码和数据的状态\n5 试过但失败的做法和原因\n6 还没解决的问题\n7 下一步计划',
@@ -4195,13 +4263,14 @@ const 引擎 = {
       if (p.type === 'image' && (旧 || !p.data)) return { type: 'text', text: `[图片 ${p.name || ''}]` }; // 旧记录
       const v = p.type === 'ref' && !旧 && 引用.身.get(p.key);
       return p.type !== 'ref' ? p : !v || /^data:(?!image\/)/.test(v) ? { type: 'text', text: 引用.行(p) }
-        : /^data:/.test(v) ? { type: 'image', name: p.name, mimeType: p.mime, data: v.split(',')[1] }
+        : /^data:/.test(v) ? { type: 'image', name: p.name, ...图头(v) }
         : { type: 'text', text: `[${p.name}]\n${v.length > 引擎.结果上限 ? 引用.截(v, p.key) : v}` };
     };
     const r = m.role, c = m.content;
     if (r === 'user') return { role: r, content: Array.isArray(c) ? c.map(展) : c };
-    if (r === 'summary')
-      return { role: 'user', content: `[第 ${m.压了.join('–')} 条记录的摘要, 原文用 history.read 读]\n${c}` };
+    if (r === 'summary')   // 会话备忘不在系统提示里(每步都改, 放那里每步都把前缀缓存作废): 压缩时存进摘要, 跟着它给
+      return { role: 'user', content: `[第 ${m.压了.join('–')} 条记录的摘要, 原文用 history.read 读]\n${c}`
+        + (m.备忘 ? `\n\n[压缩时这个会话的备忘 agent.memo.${AG.sid}]\n${m.备忘}` : '') };
     if (r === 'assistant') return { role: r, content: c, ...m.toolCalls && { toolCalls: m.toolCalls } };
     return r === 'tool' ? { role: r, toolCallId: m.toolCallId, name: m.name, content: c } : null;
   },
@@ -4214,6 +4283,12 @@ const 引擎 = {
       return n + 汉 + (s.length - 汉) / 4 + 1200 * ps.filter(p => p.type === 'image').length;
     }, 0);
   },
+  账(u) { // 厂商报的一步用量, 各家字段不同: 入 = 发过去的总数(含命中缓存的), 缓存 = 其中命中的, 出 = 回的
+    const 读 = u.cache_read_input_tokens || 0, 入 = u.prompt_tokens ?? (u.input_tokens != null
+      ? u.input_tokens + 读 + (u.cache_creation_input_tokens || 0) : u.promptTokenCount);
+    return 入 == null ? null : { 入, 出: u.completion_tokens ?? u.output_tokens ?? u.candidatesTokenCount ?? 0,
+      缓存: u.prompt_tokens_details?.cached_tokens ?? u.cachedContentTokenCount ?? 读 };
+  },
   分组(list) { // 一条消息加跟着它的工具结果是一组; 丢和压都按组, 不拆开
     const gs = [];
     list.forEach(m => { if (m.role !== 'tool' || !gs.length) gs.push([]); gs[gs.length - 1].push(m); });
@@ -4225,9 +4300,10 @@ const 引擎 = {
   },
   装(不丢) { // 发给模型的 = 最后一条摘要 + 它之后的原文。还超预算才从旧到新成组丢, 头尾两组不丢; 不丢 = 只量大小
     const 起 = 引擎.起点(), 后 = AG.hist.slice(起), 末问 = 后.map(是问).lastIndexOf(true);   // 这一问里的引用给原样
-    const 答 = 后.map((m, i) => m.role === 'assistant' ? i : -1).filter(i => i >= 0), 折 = 答[答.length - 6] || 0;
-    const 旧 = (m, i) => i < 折 && m.role === 'tool' && m.content.length > 600 ? {   // 每次请求少发很多
-      ...m, content: `${切(m.content, 400)}\n…[6 轮以前的工具结果只留开头, 原文 history.read {from: ${起 + i}, n: 1}]`
+    // 较早的工具结果只留开头, 每次请求少发很多。分界每 10 轮才往后挪一次: 挪一下, 从那条起的前缀缓存就作废, 每步挪就每步不中
+    const 答 = 后.map((m, i) => m.role === 'assistant' ? i : -1).filter(i => i >= 0), 档 = Math.floor((答.length - 6) / 10) * 10;
+    const 折 = 档 > 0 ? 答[档] : 0, 旧 = (m, i) => i < 折 && m.role === 'tool' && m.content.length > 600 ? {
+      ...m, content: `${切(m.content, 400)}\n…[较早的工具结果只留开头, 原文 history.read {from: ${起 + i}, n: 1}]`
     } : m;
     const gs = 引擎.分组(后.map((m, i) => 引擎.喂(旧(m, i), i < 末问)).filter(Boolean));
     let 丢 = 0, n = !不丢 && 引擎.底 + 引擎.估(gs.flat());   // 估是逐条相加的: 丢一组减一组, 不用每次重估全部
@@ -4238,12 +4314,18 @@ const 引擎 = {
   async 量() { // 量上下文用量, 写到用量表。量的是没丢之前的: 量丢过的, 大组一丢就永远"不超", 永远不压
     引擎.预算 = +(await ctx.kv.get('settings:agent.ctxBudget').catch(() => 0)) || 256000;
     const 用 = 引擎.用 = 引擎.底 + 引擎.估(引擎.装(true));
-    骨架.用量(用, 引擎.预算);
+    骨架.用量(用, 引擎.预算, AG.hist.findLast(m => m.usage)?.usage);
     return 用;
+  },
+  验摘要(t) { // 摘要得照七条写: 太短、认不出几条就算没写成(曾经只回了半句乱码, 却替掉了前面 261 条记录)
+    t = String(t || '').trim();
+    const 条 = new Set((t.match(/^[\s#>*-]*[1-7一二三四五六七](?=[\s.、:：)）*])/gm) || []).map(x => x.slice(-1)));
+    return !t ? '是空的' : t.length < 100 || 条.size < 6 ? `${t.length} 字, 七条认出 ${条.size} 条` : '';
   },
   async 压缩(硬) { // 对话过预算七成(硬 = 手动, 不看用量)就压: 旧的一段让模型写成摘要插进记录, 原文不删; 压不成照常发
     引擎.没压 = '';   // 系统说明和工具说明压不了, 不算进七成: 预算设得很小时不会每步都去压
     if (引擎.压缩中 || ((await 引擎.量()) - 引擎.底 < 引擎.预算 * 0.7 && !硬)) return false;
+    if (!硬 && 引擎.歇 > 0) return !(引擎.没压 = `上次摘要没写成, 再过 ${引擎.歇--} 步再压`);
     const s = 引擎.起点(), gs = 引擎.分组(AG.hist.slice(s).filter(m => m.role !== 'note'));
     const 重 = g => 引擎.估(g.map(m => 引擎.喂(m, true)).filter(Boolean));
     let i = gs.length, 留 = 0, 问 = 0;   // 从新往旧留原文: 至少两组, 留到预算的三成; 手动压留到最近两问就够
@@ -4268,8 +4350,15 @@ const 引擎 = {
     try {
       const messages = [{ role: 'system', content: 引擎.摘要模板 }, { role: 'user', content: 原文 }];
       const r = await 大脑.chat({ messages, signal: (引擎.abort = new AbortController()).signal });   // 压的时候也能停
-      if (!r.content || !r.content.trim()) return !(引擎.没压 = '模型没写出摘要, 换个模型再试');
-      AG.hist.splice(p, 0, { role: 'summary', content: r.content.trim(), 压了: [s, p - 1], at: Date.now() });
+      const 坏 = 引擎.验摘要(r.content);
+      if (坏) {   // 收下坏摘要, 它前面的原文就再也不发了: 当没压, 原文照发, 歇几步再试
+        引擎.歇 = 5;
+        引擎.没压 = `摘要没写成(${坏}), 原文照常发, ${引擎.歇} 步后再压; 老这样就换个模型`;
+        if (!硬) 引擎.记(引擎.没压);
+        return false;
+      }
+      const 备 = await ctx.kv.get('agent.memo.' + AG.sid).then(v => String(v || '').trim(), () => '');
+      AG.hist.splice(p, 0, { role: 'summary', content: r.content.trim(), ...备 && { 备忘: 备 }, 压了: [s, p - 1], at: Date.now() });
       await 会话.save();
       return true;
     } catch (e) {
@@ -4353,7 +4442,32 @@ const 引擎 = {
     引擎.记('上次那一轮没做完, 说"继续"就接着做');
     await 会话.save();
   },
-  async 问(req) { // 问大脑一次; 断了隔一会再问, 等时点了停止就不问
+  换过: [],   // 这一轮断过的模型, 头一个是原来选的
+  async 换大脑(e) { // 原来选的重试完还断: 先换同类(同家同档 > 同家), 同家连断两个再换别家; 最多换两次, 只管这一轮, 换了就说
+    if (引擎.换过.length >= 2) return false;
+    const ps = await 厂商配置.列表().catch(() => []), did = await 厂商配置.默认id().catch(() => null);
+    const b = Object.assign({}, AG.brain, AG.换);
+    const p = ps.find(x => x.id === b.provider || x.name === b.provider) || ps.find(x => x.id === did) || ps[0];
+    const cur = b.model || p?.model;
+    if (!p || !cur) return false;
+    引擎.换过.push(cur);
+    const 段 = m => String(m).toLowerCase().split(/[-_/.:\s]+/).filter(x => x && !/^\d/.test(x));   // claude-opus-5-5 → [claude, opus]
+    const 原 = 段(引擎.换过[0]), 别家 = 引擎.换过.length >= 2 && 引擎.换过.every(m => 段(m)[0] === 原[0]);
+    const 分 = m => {
+      const s = 段(m);
+      return 别家 ? (s[0] === 原[0] ? -1 : m === p.model ? 1 : 0)   // 别家先换这家的默认模型
+        : (s[0] === 原[0] ? 2 : 0) + (s[1] && s[1] === 原[1] ? 1 : 0);
+    };
+    const 候 = 厂商配置.文本(p).filter(m => !引擎.换过.includes(m)).sort((x, y) => 分(y) - 分(x) || (y > x ? 1 : -1));
+    if (!候.length || 分(候[0]) < 0) return false;
+    AG.换 = { provider: p.id, model: 候[0] };
+    const 话 = `大脑「${cur}」重试完还是断(${短(e.message, 80)}), 这一轮换成${别家 || 分(候[0]) <= 0 ? '别家的' : '同类的'}「${候[0]}」接着做, 下一轮换回`;
+    引擎.记(话);
+    骨架.status(话);
+    渲染.paint();
+    return true;
+  },
+  async 问(req) { // 问大脑一次; 断了隔一会再问, 再断换模型(见 换大脑); 等时点了停止就不问
     for (let i = 0; ; i++) {
       引擎.abort = new AbortController();
       try {
@@ -4361,7 +4475,12 @@ const 引擎 = {
       } catch (e) {
         const 断 = e && (e.retry || e.name === 'TypeError' || e.status >= 500 || e.status === 429
           || /bad record MAC|EOF|ECONNRESET|socket|network|Failed to fetch|timeout|超时|连不上|网络|tls|5(02|03|04)/i.test(e.message));
-        if (!断 || 引擎.stopped || i >= 引擎.重试等.length) throw e;
+        if (!断 || 引擎.stopped) throw e;
+        if (i >= 引擎.重试等.length) { // 重试完还断: 换个模型接着问, 换上的每个只问一次
+          if (!await 引擎.换大脑(e)) throw e;
+          i = 引擎.重试等.length - 1;
+          continue;
+        }
         const 等 = Math.min(e.等 || 引擎.重试等[i], 60000);
         骨架.status(`${e.status === 429 ? '被厂商限流' : '大脑那头断了'}, ${等 / 1000} 秒后第 ${i + 1} 次重试…`);
         AG.live.text = '';   // 说到一半的那几个字先收掉
@@ -4404,6 +4523,8 @@ const 引擎 = {
       return 骨架.回填(text);
     }
     引擎.stopped = false;
+    引擎.换过 = [];
+    AG.换 = null;
     引擎.停了 = new Promise(ok => { 引擎.叫停 = ok; });
     骨架.setBusy(true);
     try {
@@ -4439,6 +4560,8 @@ const 引擎 = {
         }
         Object.assign(AG.live, { t0: 0, 写: null });
         const a = { role: 'assistant', content: r.content, at: Date.now(), ms: Date.now() - t0 };
+        const 账 = r.usage && 引擎.账(r.usage);
+        if (账) { a.usage = 账; 骨架.用量(引擎.用, 引擎.预算, 账); }   // 厂商报的用量随记录存下: 看缓存命中、查花费
         if (AG.live.思) a.think = AG.live.思;
         const 断 = r.stop === 'length';
         if (r.toolCalls && !断) a.toolCalls = r.toolCalls;
@@ -4457,6 +4580,8 @@ const 引擎 = {
       }
       if (引擎.stopped) 引擎.记(引擎.原因);
     } finally {
+      if (AG.换) 引擎.记(`这一轮后面是「${AG.换.model}」答的; 下一轮换回「${引擎.换过[0]}」`);
+      AG.换 = null;
       AG.busy = false;
       AG.live.text = '';
       AG.live.t0 = 0;
@@ -5169,6 +5294,18 @@ const 通话 = {
 // 数据 {"prefix": "settings:agent.", "label": "agent 设置", "kind": "config"}
 // 现在 agent.prompt
 // 打开 agent.open
+// ═ 读技能 ═
+// 块的技能段是一条条「// 【名】什么时候读: 做法」, 按条读: 为一条把整段读进上下文太费。
+// skill 不在本块清单的 caps 里: 只记在本块名下, 只有 agent 自己调得到, 本来就只给它用
+登记('skill.read', async a => {
+  const ls = (await ctx.call('stem.block', { id: a.id, segment: '技能' })).segment.text.split('\n');
+  const 头 = ls.map((l, i) => /^\/\/ 【.+?】/.test(l) ? i : -1).filter(i => i >= 0), 名 = 头.map(i => /【(.+?)】/.exec(ls[i])[1]);
+  if (!a.name) return { id: a.id, 技能: 名 };
+  let k = 名.indexOf(a.name);
+  if (k < 0) k = 名.findIndex(n => n.includes(a.name) || a.name.includes(n));
+  if (k < 0) throw new Error(`${a.id} 的技能段没有「${a.name}」, 有: ${名.join('、') || '(空)'}`);
+  return ls.slice(头[k], 头[k + 1] ?? ls.length).map(l => l.replace(/^\/\/ ?/, '')).join('\n').trim();
+}, '读一块技能段里的一条(系统提示里列的技能名); 不给 name 回这块有哪些技能', { id: 'string', name: 'string?' }, true);
 // ═ 装配 · 跟着: 状态, 骨架, 会话, 渲染, 引用, 大脑选择, 系统提示, 引擎 ═
 // 接线: 界面的动作接到引擎, 引擎的进度接到界面; 自己被替换时把话说清, 不无声消失
 骨架.mount();
@@ -6961,6 +7098,8 @@ const 界面 = {
 //   ⑥ 作品: 让它「只回代码, 放在 ```html 代码块里」; 应用抠代码块; 运行窗 runOpen 回 text + controls(能点的东西和 label), 交给测试员 agent 设计步骤,
 //      应用照 runAct 做并记下每步之后的页面字, 再 runShot 截图 → bridge.file 存成附件 → 评审拿代码 + 运行记录 + 截图打分。用完 runClose。
 //   ⑦ 耗时和失败照实显示(每人一个状态: 作答中 / ✓ 几秒 / ✗ 原因); 赛果只存摘要到 store(最近 20-30 局), 别存截图。真人要参赛就拉进会话(bridge.open / say)。
+//   ⑧ 让人看得懂: 每位选手一个座位, 答卷先封着再开卷, 评语一条条飞到被评的答卷下, 从低到高亮分; 模型回的 **加粗** 等 markdown 符号先去掉。
+//      小应用没 pick 授权就 ask 会报「这个应用没被允许用」: 让用户在弹框里勾一次, 勾的可能是同名的另一位(如「阶跃plan」), 用 pick 回的 id。
 // ═ 自报 ═
 // 和电脑上的 agent(Colony Bridge 插件里接上的 hermes / openclaw / 网关)、跨网的云端 agent、AI 配置里的模型、加了好友的真人单聊、拉群, 能发图片、视频、音频和文件;
 // 也能把外部 agent 接成厂商当全能 agent 的大脑(bridge.connect)。有记忆的 agent 只收它没见过的话。小应用用 bridge.pick 让用户选人, 再 bridge.ask / open / say。
@@ -7576,9 +7715,10 @@ const 窗口 = {
     });
     窗口.定(w, g, true);
   },
-  切(w) {
+  切(w) { // 收起着的也放出来: 切完要看得见
     窗口.记[w.类] = Object.assign({}, 窗口.记[w.类], { max: !窗口.大(w.类) });
     窗口.摆(w);
+    窗口.前(w.el);
     窗口.存();
   },
   挪(w, g) { // {x, y} 挪、{w, h} 改大小; 最大化着就先变成窗
@@ -7642,7 +7782,7 @@ const 运行窗 = {
     w.el.querySelector('[data-a="编辑"]').onclick = () => 点选.开();
     try {
       const f = await ctx.call('stem.mount',
-        { code: m.code || '', host: w.el.querySelector('.u-wbody'), context: { miniappId: id },
+        { code: m.code || '', host: w.el.querySelector('.u-wbody'), context: { miniappId: id, trust: m.trust === true },
         attrs: { allow: 'microphone; camera; autoplay; clipboard-read; clipboard-write',
           sandbox: m.trust === true ? 'allow-same-origin' : '' },
         timeout: 8000 });
@@ -7928,7 +8068,7 @@ const 动作 = {
       ['打开', o => 运行窗.开(o.id)],
       ['简述', o => 对话框.开(`<h2>${esc(o.icon)} ${esc(o.name)}</h2><p class="u-hint">`
         + `${esc(o.desc) || '(没有简述)'}</p>`)],
-      ['改名', (o, v) => 应用登记.update({ id: o.id, patch: { name: v } }), '新名字'],
+      ['改名', (o, v) => 应用登记.update({ id: o.id, patch: { name: v } }).then(应用登记.简), '新名字'],   // 回简述, 不回整份代码
       '-',
       ['移到桌面', o => 桌面.移出(o.id), 0, o => !!o.夹],   // 回字符串算「为什么不能」, 这里转成真假
       ['放进文件夹', (o, v) => 桌面.移入(o.id, v), '*文件夹 id 或名字'],
@@ -7982,6 +8122,9 @@ const 动作 = {
     ],
     colony: [
       ['设置', () => 设置.开()],
+      ['换皮肤', (o, v) => 皮肤.换(v), '?经典 / 视窗'],
+      ['随机壁纸', () => 壁纸.随机()],
+      ['AI 画壁纸', (o, v) => 壁纸.画(v), '想要什么样的', () => colony.has('ai.image') || '先在 AI 配置里给「图片」选个模型'],
       ['Stem 面板', () => 设置.stem(), 0, () => colony.has('stem.panel') || 在Colony('这版 Stem 没有面板')],
       ['导入 Petri', (o, v) => 装配台.导入(v), '?应用 id', 在Colony],
       ['导出下一代', () => 装配台.导出('colony'), 0, 在Colony],
@@ -8389,15 +8532,10 @@ const 设置 = {
     设('--u-zoom', v.fontScale && parseFloat(v.fontScale) !== 1 ? v.fontScale : '');
     设('--accent', v.accent);
     设('--accent-soft', v.accent && `color-mix(in srgb,${v.accent} 14%,transparent)`);
-    设('--u-wall', v.wall && `url("${encodeURI(v.wall)}")`);
+    let 墙 = v.wall;   // AI 画的存在次元口袋, 这里记 media: 键, 用时取原件转成本页网址
+    if (墙 && 墙.startsWith('media:')) { try { const o = await ctx.call('data.get', { key: 墙, path: 'dataUrl' }); 墙 = URL.createObjectURL(await (await fetch(o)).blob()); } catch (e) { 墙 = ''; } }
+    设('--u-wall', 墙 && `url("${墙.startsWith('blob:') ? 墙 : encodeURI(墙)}")`);
   },
-  换壁纸: (url, 存, inp) => new Promise(好 => { // 先载一遍: 载得出才换, 载不出保留原来的
-    if (!url) return 好(1);
-    const i = new Image();
-    Object.assign(i, { referrerPolicy: 'no-referrer', onload: () => 好(1), onerror: () => 好(0) });
-    i.src = url;
-  }).then(好 => 好 ? 存('wall', inp.value = url)
-    : (inp.value = inp.defaultValue, 对话框.提示('这张图载不出来, 壁纸没换'))),
   开: () => 装配台.开块(ctx.id),
   stem() { // Stem 把面板画进这个窗; 关窗时还给它
     const 有 = UI.wins.get('stem');
@@ -8431,7 +8569,9 @@ const 设置 = {
       if (值域 === 'url') return 签 + '<div class="u-row">'
         + `<input class="u-field" style="flex:1" data-k="${k}" value="${esc(cur)}`
         + '" placeholder="图片网址, 回车换上; 空着就是纯色底">'
-        + '<button class="u-btn" data-rand>随机一张</button></div>';
+        + '<button class="u-btn" data-rand>🎲 随机</button></div>'
+        + (colony.has('ai.image') ? '<div class="u-row"><input class="u-field" style="flex:1" data-gen placeholder="说一句想要的壁纸, 回车让 AI 画(要在 AI 配置里选了出图模型)">'
+          + '<button class="u-btn" data-genb>🎨 画一张</button></div>' : '');
       if (值域 === 'select') return `${签}<select class="u-field" data-k="${k}">`
         + Object.keys(设置.字体).map(x => `<option${x === cur ? ' selected' : ''}>${x}`
           + '</option>').join('') + '</select>';
@@ -8439,7 +8579,16 @@ const 设置 = {
       return `<label class="u-lab">${名} <span data-v="${k}">${esc(cur)}`
         + '</span></label><input type="range" data-k="'
         + `${k}" min="${lo}" max="${hi}" step="${st}" value="${esc(cur)}" style="width:100%">`;
-    }).join('') + '<div class="u-row"><button class="u-btn" data-reset>恢复默认</button></div>';
+    }).join('') + '<label class="u-lab">皮肤</label><div class="u-row" data-skins>' + Object.keys(皮肤.套).map(x => `<button class="u-btn${x === 皮肤.当前 ? ' on' : ''}" data-skin="${esc(x)}">${esc(x)}</button>`).join('') + '</div>'
+      + '<label class="u-lab">录屏</label><div class="u-row"><button class="u-btn" data-rec></button></div>'
+      + '<div class="u-row"><button class="u-btn" data-reset>恢复默认</button></div>';
+    { // 录屏授权: 人在这点一次(浏览器规定要人点), 本页之后 agent 随时录, 不用再弹; 再点收回
+      const rb = el.querySelector('[data-rec]'), 画 = () => { const s = 演示.状态(); rb.textContent = s.已授权 ? '🎬 已授权录屏 · 点这里收回' : '🎬 授权录屏(选「这个标签页」)'; rb.classList.toggle('on', s.已授权); };
+      rb.onclick = async () => { if (演示.状态().已授权) 演示.收(); else { 演示.备(); const b = ctx.root.querySelector('.u-arm'); if (b) b.click(); } setTimeout(画, 400); setTimeout(画, 3000); };
+      画();
+    }
+    el.querySelector('[data-skins]').onclick = async e => { const b = e.target.closest('[data-skin]'); if (!b) return; await 皮肤.换(b.dataset.skin);
+      el.querySelectorAll('[data-skin]').forEach(x => x.classList.toggle('on', x.dataset.skin === 皮肤.当前)); };
     let q = Promise.resolve();   // 写入排队: 连着改几项时先读后写会互相吞掉
     const 存 = (k, x) => q = q.then(async () => {
       const cur = (await ctx.kv.get('settings:ui.styles')) || {},
@@ -8452,9 +8601,11 @@ const 设置 = {
     el.querySelectorAll('[data-k]').forEach(inp => {
       if (inp !== 墙) inp.oninput = inp.onchange = () => 存(inp.dataset.k, inp.value);
     });
-    墙.onchange = () => 设置.换壁纸(墙.value.trim(), 存, 墙);   // 打完字回车或离开才换, 不每个字母载一次
-    el.querySelector('[data-rand]').onclick = () => 设置.换壁纸('https://picsum.photos/seed/'
-      + Date.now().toString(36) + '/1920/1080', 存, 墙);   // 同一个种子总是同一张, 存下的网址下次还是它
+    墙.onchange = () => 壁纸.换(墙.value.trim()).catch(() => { 墙.value = 墙.defaultValue; });   // 打完字回车或离开才换, 不每个字母载一次
+    el.querySelector('[data-rand]').onclick = () => 壁纸.随机();
+    const 题 = el.querySelector('[data-gen]');
+    if (题) { const 画 = () => 题.value.trim() && 壁纸.画(题.value.trim()).catch(e => 对话框.提示('没画成: ' + e.message));
+      题.onkeydown = e => { if (e.key === 'Enter') 画(); }; el.querySelector('[data-genb]').onclick = 画; }
     el.querySelector('[data-reset]').onclick = async () => {
       await ctx.kv.del('settings:ui.styles');
       await 设置.用();
@@ -9332,7 +9483,8 @@ const 演示 = {
     return { 视频: 'app:' + m.id, 字节: v.size };
   },
   // ─ 常开录屏: 人点一次授权(浏览器规定必须人点), 之后 agent 随时开录、停录, 一段段存进次元口袋 ─
-  常: null,   // { s: 屏幕流, 段: 正在录的那段 }
+  get 常() { return window.__colonyRec || null; },   // 授权流挂在页面上: 界面块改源码重启后还在, 不用人再点一次
+  set 常(v) { window.__colonyRec = v; },
   错: '',
   备() {
     if (演示.常 && 演示.常.s.active) return { ok: true, 已授权: true };
@@ -9400,6 +9552,127 @@ const 演示 = {
     animation:u-pop .5s cubic-bezier(.34,1.56,.64,1)}
     .u-title small{margin-top:14px;color:var(--text);font-size:22px}`,
 };
+// ═ 皮肤 · 跟着: 状态, 窗口, 动作, 设置, 对话框 ═
+// 皮肤只换长相和摆放, 不碰逻辑: 同一套 DOM(侧栏、顶栏、窗、亮框)按 data-skin 换样式, 「视窗」多挂一条任务栏和开始菜单。
+// 存 settings:ui.styles.skin; 想加一套: 在「套」里加一项 {名, css, 装?(挂额外 DOM), 卸?}
+const 皮肤 = {
+  当前: '经典',
+  套: {
+    经典: { 名: '经典', css: '' },
+    视窗: {
+      名: '视窗',
+      css: `.u-shell[data-skin="视窗"]{--u-tb:52px}
+  .u-shell[data-skin="视窗"] .u-side{display:none}
+  .u-shell[data-skin="视窗"] .u-head{display:none}
+  .u-shell[data-skin="视窗"] .u-page{padding:14px 14px calc(var(--u-tb) + 16px)}
+  .u-shell[data-skin="视窗"] .u-main{background:linear-gradient(135deg,rgba(8,14,26,.35),rgba(0,0,0,.1)),
+    var(--u-wall,radial-gradient(ellipse 60% 70% at 62% 58%,rgba(120,170,255,.55),transparent 60%),
+    radial-gradient(ellipse 45% 55% at 40% 70%,rgba(90,110,255,.5),transparent 62%),
+    radial-gradient(ellipse 35% 40% at 75% 30%,rgba(170,120,255,.35),transparent 65%),
+    linear-gradient(160deg,#0b1a3a,#0a2a6b 45%,#071233)) center/cover no-repeat}
+  .u-shell[data-skin="视窗"] .u-nm{color:#fff}
+  .u-shell[data-skin="视窗"] .u-ico{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.22);backdrop-filter:blur(10px)}
+  body[data-skin="视窗"] .u-win:not(.u-w){left:0;bottom:var(--u-tb,52px)}
+  body[data-skin="视窗"] .u-win.u-w{border-radius:14px;border-color:rgba(255,255,255,.22)}
+  body[data-skin="视窗"] .u-win .u-bar{background:rgba(32,38,52,.92)}
+  body[data-skin="视窗"] .u-bar [data-min]{display:inline-block}
+  body[data-skin="视窗"] #agent-dock{bottom:64px!important}
+  .u-task{position:fixed;left:0;right:0;bottom:0;height:52px;z-index:96;display:flex;align-items:center;gap:8px;
+    padding:6px 10px;box-sizing:border-box;background:rgba(14,18,26,.72);border-top:1px solid rgba(255,255,255,.1);
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font-family:var(--sans);animation:u-tbin .35s ease-out}
+  @keyframes u-tbin{from{transform:translateY(100%)}}
+  .u-tb{height:38px;min-width:38px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.08);color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;
+    white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;font-family:inherit}
+  .u-tb:hover{background:rgba(255,255,255,.16)}.u-tb.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .u-tb.u-min{opacity:.55}.u-tb-start{font-weight:600}
+  .u-tb-wins{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;align-items:center}
+  .u-task .u-tclock{margin-left:auto;margin-right:84px;color:#fff;font-size:12px;line-height:1.25;text-align:right}
+  .u-start{position:fixed;left:10px;bottom:60px;width:360px;max-height:min(640px,calc(100vh - 80px));z-index:97;display:none;
+    flex-direction:column;overflow:hidden;background:rgba(20,26,38,.9);border:1px solid rgba(255,255,255,.18);border-radius:18px;
+    color:#fff;box-shadow:0 20px 60px rgba(0,0,0,.45);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);font-family:var(--sans)}
+  .u-start.on{display:flex;animation:u-pop2 .14s ease-out}@keyframes u-pop2{from{opacity:0;transform:translateY(8px) scale(.98)}}
+  .u-st-h{padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.1)}
+  .u-st-h b{font-size:16px}.u-st-h b i{color:var(--accent);margin-right:6px}.u-st-h small{display:block;font-size:11px;opacity:.68}
+  .u-st-b{padding:12px;overflow-y:auto;flex:1}
+  .u-start .u-tiles{flex-direction:column;align-items:stretch;gap:2px}
+  .u-start .u-tile{background:transparent;color:#fff;border-radius:10px;padding:9px 10px 9px 36px;font-weight:500;font-size:13px}
+  .u-start .u-tile:hover{background:rgba(255,255,255,.12);filter:none}
+  .u-start .u-tile::before{content:"🧩";position:absolute;left:10px;top:50%;translate:0 -50%;font-size:14px}
+  .u-st-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.1)}
+  .u-st-g button{padding:10px 12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#fff;border-radius:10px;cursor:pointer;font-family:inherit}`,
+      装() { // 任务栏 + 开始菜单; 顶栏的亮框挪进开始菜单(同一批元素, 点了照旧)
+        const shell = ctx.root.querySelector('.u-shell');
+        const tb = document.createElement('div'); tb.className = 'u-task'; tb.id = 'u-task';
+        tb.innerHTML = '<button class="u-tb u-tb-start" id="u-start">⊞ 开始</button><div class="u-tb-wins" id="u-task-wins"></div><span class="u-tclock" id="u-tclock"></span>';
+        const sm = document.createElement('div'); sm.className = 'u-start'; sm.id = 'u-startmenu';
+        sm.innerHTML = '<div class="u-st-h"><b><i>Colony</i>开始</b><small>各块与桌面设置</small></div><div class="u-st-b" id="u-st-b"></div>'
+          + '<div class="u-st-g"><button data-st="设置">⚙ 设置</button><button data-st="桌面">🖥 看桌面</button><button data-st="壁纸">🎲 随机壁纸</button>' + (colony.has('ai.image') ? '<button data-st="画">🎨 AI 画壁纸</button>' : '') + '</div>';
+        shell.appendChild(tb); shell.appendChild(sm);
+        $('u-st-b').appendChild($('u-tiles'));
+        $('u-start').onclick = e => { e.stopPropagation(); sm.classList.toggle('on'); };
+        sm.onclick = e => { const b = e.target.closest('[data-st]'); if (!b) return; sm.classList.remove('on');
+          ({ 设置: () => 动作.人做('colony', '设置'), 桌面: () => $('u-desk').click(), 壁纸: () => 壁纸.随机(), 画: () => 动作.人做('colony', '设置') })[b.dataset.st](); };
+        皮肤.点外 = e => { if (!e.target.closest('#u-startmenu,#u-start')) sm.classList.remove('on'); };
+        document.addEventListener('pointerdown', 皮肤.点外, true);
+        $('u-task-wins').onclick = e => { const k = e.target.closest('[data-k]'); if (!k || !UI.wins.has(k.dataset.k)) return;
+          const w = UI.wins.get(k.dataset.k); w.el.classList.contains('u-min') ? 窗口.前(w.el) : 窗口.收(w); };
+        皮肤.刷 = () => { // 任务栏: 开着的窗一窗一键 + 时钟; 照侧栏的窗列表画
+          const box = $('u-task-wins'); if (!box) return; const 顶 = (窗口.序()[0] || [])[0];
+          box.innerHTML = [...UI.wins].map(([k, w]) => '<button class="u-tb' + (w.el.classList.contains('u-min') ? ' u-min' : k === 顶 ? ' on' : '')
+            + '" data-k="' + esc(k) + '">' + esc(w.el.querySelector('[data-t]').textContent) + '</button>').join('');
+          const d = new Date(); $('u-tclock').innerHTML = d.toTimeString().slice(0, 5) + '<br>' + (d.getMonth() + 1) + '/' + d.getDate();
+        };
+        皮肤.表 = setInterval(皮肤.刷, 800); 皮肤.刷();
+      },
+      卸() {
+        clearInterval(皮肤.表); document.removeEventListener('pointerdown', 皮肤.点外, true);
+        ctx.root.querySelector('.u-acts').appendChild($('u-tiles'));
+        ['u-task', 'u-startmenu'].forEach(id => $(id) && $(id).remove());
+      },
+    },
+  },
+  async 用(名) {
+    const v = (await ctx.kv.get('settings:ui.styles')) || {};
+    名 = 名 || v.skin || '经典'; if (!皮肤.套[名]) 名 = '经典';
+    const 旧 = 皮肤.套[皮肤.当前]; if (旧 && 旧.卸 && 皮肤.当前 !== 名) 旧.卸();
+    let st = $('u-skin-css'); if (!st) { st = document.createElement('style'); st.id = 'u-skin-css'; document.head.appendChild(st); }
+    st.textContent = Object.values(皮肤.套).map(s => s.css).join('\n');
+    const shell = ctx.root.querySelector('.u-shell'); shell.dataset.skin = 名; document.body.dataset.skin = 名;
+    const 新 = 皮肤.套[名]; if (新.装 && 皮肤.当前 !== 名) 新.装();
+    皮肤.当前 = 名; return 名;
+  },
+  async 换(名) {
+    if (!皮肤.套[名]) throw new Error('没有这套皮肤: ' + 名 + '(有: ' + Object.keys(皮肤.套).join('、') + ')');
+    const v = (await ctx.kv.get('settings:ui.styles')) || {}; v.skin = 名; await ctx.kv.set('settings:ui.styles', v);
+    return 皮肤.用(名);
+  },
+  卸掉() { const s = 皮肤.套[皮肤.当前]; if (s && s.卸) s.卸(); $('u-skin-css') && $('u-skin-css').remove(); delete document.body.dataset.skin; },
+};
+
+// 壁纸: 存 settings:ui.styles.wall(图片网址; AI 画的存进次元口袋, 这里只记 media: 键), 设置.用 把它铺上; 载得出才换, 载不出保留原来的
+const 壁纸 = {
+  载: url => new Promise(ok => { const i = new Image(); Object.assign(i, { referrerPolicy: 'no-referrer', onload: () => ok(true), onerror: () => ok(false), src: url }); }),
+  async 存(墙) {
+    const v = (await ctx.kv.get('settings:ui.styles')) || {}; v.wall = 墙; await ctx.kv.set('settings:ui.styles', v); await 设置.用();
+    const inp = document.querySelector('.u-set [data-k="wall"]'); if (inp) inp.value = inp.defaultValue = 墙.startsWith('media:') ? '' : 墙;
+    return 墙;
+  },
+  async 换(url) { // 空 = 纯色底
+    if (url && !(await 壁纸.载(url))) { 对话框.提示('这张图载不出来, 壁纸没换'); throw new Error('壁纸载不出来: ' + url); }
+    return 壁纸.存(url);
+  },
+  随机: () => 壁纸.换('https://picsum.photos/seed/' + Date.now().toString(36) + '/1920/1080'),   // 同一个种子总是同一张, 存下的网址下次还是它
+  async 画(话) {
+    if (!colony.has('ai.image')) throw new Error('没有出图能力: 先在 AI 配置里给「图片」选个模型');
+    对话框.提示('🎨 正在画: ' + 话);
+    const r = await ctx.call('ai.image', { prompt: 话 + '。用作电脑桌面壁纸: 16:9 横幅, 画面中央和底部留出干净的空间, 不要文字和水印', size: '1792x1024' });
+    let 图 = r.url && !r.data ? r.url : 'data:' + (r.mimeType || 'image/png') + ';base64,' + r.data;
+    图 = 图.replace(/^data:image\/png;base64,(?=\/9j\/)/, 'data:image/jpeg;base64,');   // 有的模型把 jpeg 标成 png
+    const k = (await ctx.call('data.set', { key: 'media:', value: { name: '壁纸 · ' + 话.slice(0, 20) + (图.startsWith('data:image/jpeg') ? '.jpg' : '.png'), dataUrl: 图 } })).key;
+    await 壁纸.存(k); 对话框.提示('🖼 换上了, 原图在次元口袋'); return k;
+  },
+};
 // ═ 装配 ═
 // ui.host: Stem 靠它撤掉裸壳页; 卸载时样式、窗和对页面的改动都撤掉
 登记('apps.list', async () => (await 应用登记.list()).map(应用登记.简), '列出桌面上的小应用(不带代码; 要代码用 apps.get)', {});
@@ -9446,6 +9719,7 @@ document.body.style.overflow = 'hidden';   // 桌面铺满一屏, 不让页面�
 ctx.root.innerHTML = 骨架;
 ctx.cleanup(() => {
   点选.退(true);
+  皮肤.卸掉();
   if ($('u-skin')) $('u-skin').remove();
   [...UI.wins.keys()].forEach(k => 窗口.关(k));
   菜单.收();
@@ -9516,6 +9790,7 @@ console.log('rec ok');
 登记('ui.rec.release', () => 演示.收(), '收回录屏授权(停掉共享)', {});
 窗口.载().then(桌面.画);
 设置.用();
+皮肤.用().catch(e => 对话框.提示('界面皮肤没上: ' + e.message));
 点选.用皮肤().catch(e => 对话框.提示('皮肤没上: ' + e.message));
 装配台.亮框();
 return {};
@@ -9713,6 +9988,28 @@ const 数据 = {
     await 归属.载();
     return (await ctx.kv.list(p || '')).map(e => 数据.条(e.key, e.value));
   },
+  // 先列后称: 只要名单(几毫秒)就能画地图和列表; 大小、类型、时间要读值, 后台一批批补。
+  // 称过的按键记着, 库没变的键下回不再称; 口袋自己写、删的那条当场忘掉重称
+  称过: new Map(),
+  忘: k => 数据.称过.delete(k),
+  async 名单(p) {
+    await 归属.载();
+    const ks = ctx.kv.keys ? await ctx.kv.keys(p || '') : (await ctx.kv.list(p || '')).map(e => e.key);
+    return ks.map(k => 数据.称过.get(k) || { key: k, bytes: 0, 叶: [], 主: 归属.of(k), 待称: 1 });
+  },
+  async 称(条, 每批) { // 把待称的一批批读值补上; 每批补完回调一次(画布跟着涨)
+    const 待 = 条.filter(e => e.待称);
+    for (let i = 0; i < 待.length; i += 20) {
+      for (const e of 待.slice(i, i + 20)) {
+        const 补 = 数据.条(e.key, await ctx.kv.get(e.key));
+        Object.keys(e).forEach(x => delete e[x]);
+        数据.称过.set(补.key, Object.assign(e, 补));
+      }
+      if (每批) 每批(Math.min(i + 20, 待.length), 待.length);
+      await new Promise(r => setTimeout(r));   // 让一让, 点击和滚动不卡
+    }
+    return 条;
+  },
   图(条) { // 地图: 每块占多少(再分到它说的每个前缀); 没数据的块也列; 没人认领的按开头那一截归堆
     const 主 = {}, 散 = {}, 加 = (o, b) => { o.count++; o.bytes += b; };
     for (const b of 归属.块) {
@@ -9740,7 +10037,7 @@ const 数据 = {
       const items = 磁盘.夹.map(f => ({ key: `disk:${f.name}/`, name: f.name, type: 'dir', bytes: 0 }));
       return { count: items.length, bytes: 0, items };
     }
-    const 条 = 数据.盘(k) ? await 磁盘.list(k) : await 数据.全(k);
+    const 条 = 数据.盘(k) ? await 磁盘.list(k) : await 数据.称(await 数据.名单(k));
     if (!k && !q) return 数据.图(条);
     const 中 = q ? 数据.搜(条, q) : 条;
     const items = 中.sort((x, y) => y.bytes - x.bytes).slice(0, a.n || 50)
@@ -9793,6 +10090,7 @@ const 数据 = {
     if (/^media:/.test(k) && v && v.constructor === Object)   // 别处的值原样存, 不往里添字段
       v = Object.assign({}, v, { from: 来 || v.from || by || '用户', at: Date.now() });
     await ctx.kv.set(k, v);
+    数据.忘(k);
     return { key: k };
   },
   async del(a, by) {
@@ -9801,6 +10099,7 @@ const 数据 = {
     await 归属.载();
     归属.守(a.key, by, 1);
     await (by === ctx.id ? 体检.删一(a.key) : ctx.kv.del(a.key));   // 人在口袋里删应用、块的改版: 走它们的正路
+    数据.忘(a.key);
     return { key: a.key };
   },
   async copy(a, by) { // to 是以 / 结尾的文件夹就用原名
@@ -10042,11 +10341,16 @@ const 界面 = {
     await 磁盘.载();
     for (const f of 磁盘.夹) S.好[f.name] = await 磁盘.好(f);
     // 各块的自报(datamap:)左边地图已经按块分好了, 列表里不再占行; 口袋记的「哪些是经口袋新建的」也不给人删,
-    S.图 = 数据.图(S.条 = await 数据.全());   // 库里有什么都列: 旧版的 datamap:、口袋自己的记号也给开发者看
-    const 签 = S.条.map(e => e.key + e.bytes).join();
-    if (静 && 签 === S.签) return;
-    S.签 = 签;
+    // 先列后称: 名单一到就画(地图有条数, 大小先写 …), 再在后台一批批称, 每批补画一次
+    const 条 = await 数据.名单(), 签 = 条.map(e => e.key).join();
+    if (静 && 签 === S.签 && !条.some(e => e.待称)) return;   // 顺手扫: 名单没变也都称过, 不动
+    const 第几 = S.扫号 = (S.扫号 || 0) + 1;
+    [S.签, S.条, S.图, S.称着] = [签, 条, 数据.图(条), 条.some(e => e.待称)];
     S.stem = colony.单独 ? {} : await ctx.call('stem.block', { id: 'stem' });
+    界面.画();
+    if (S.称着) await 数据.称(条, () => { if (第几 === S.扫号) [S.图, S.检] = [数据.图(条)], 界面.画(); });
+    if (第几 !== S.扫号) return;   // 称着的时候又扫了一次: 交给新的那次
+    S.称着 = false;
     界面.画();
     if (看.k && !数据.盘(看.k) && !看.旧) 看.开(看.k, 1).catch(() => { 看.k = ''; });
   },
@@ -10081,7 +10385,7 @@ const 界面 = {
     const 行 = (处, 图, 名, o, 类, 数, 注) => `<div class="pk-t${类 || ''}${S.处 === 处 ? ' on' : ''}`
       + `${数 === 0 ? ' off' : ''}" data-in="${esc(处)}" title="${esc(名)}" style="--w:`
       + `${处 && o && g.bytes ? o.bytes / g.bytes * 100 : 0}%">${图 || '▪'}<b>${esc(名)}`
-      + `</b><small>${注 || ''}${数 != null ? `命中 ${数}` : o ? `${o.count} · ${认.大小(o.bytes)}` : ''}`
+      + `</b><small>${注 || ''}${数 != null ? `命中 ${数}` : o ? `${o.count} · ${S.称着 ? '…' : 认.大小(o.bytes)}` : ''}`
       + '</small></div>';
     const 子 = o => o.ns.filter(n => !/^datamap:/.test(n.prefix)).map(n => 行(n.prefix, ' ',
       n.两家 ? `两家都认: ${n.两家.join('、')}` : n.label, n, ` in${n.两家 ? ' two' : ''}`)).join('')
@@ -10175,8 +10479,8 @@ const 界面 = {
         + `"${清 || 旧 ? '' : ' draggable="true"'} data-k="${esc(e.key)}" data-w="`
         + `${esc(S.q && e.where)}" title="${esc(e.key)}" style="--w:${(e.bytes || 0) / 大 * 100}%"><i>`
         + `${清 ? `<input type="checkbox" data-勾="${esc(e.key)}"${S.勾.has(e.key) ? ' checked' : ''}>`
-          : 认.图标[e.类]}</i><b>${esc(界面.叫(e.key, e.name))}</b><small>`
-        + `${e.类 === 'dir' ? '' : 认.大小(e.bytes)}${e.at ? ` · ${界面.时(e.at)}` : ''}</small><span class="pk-k">`
+          : 认.图标[e.类] || '·'}</i><b>${esc(界面.叫(e.key, e.name))}</b><small>`
+        + `${e.类 === 'dir' ? '' : e.待称 ? '…' : 认.大小(e.bytes)}${e.at ? ` · ${界面.时(e.at)}` : ''}</small><span class="pk-k">`
         + `${e.注 || ''}${谁(e)}${S.q && e.摘录 ? 看.亮(esc(e.摘录)) : esc(e.key)}</span></div>`).join('')
       + (l.length ? '' : `<p class="pk-h pk-0">${S.q ? `没找到「${esc(S.q)}」` : 清 ? '没有能清的'
         : `这里还没有东西${放 ? '<br>文件拖进来就放进这里' : ''}`}</p>`)
@@ -18239,6 +18543,10 @@ const 取包 = async (a, meta) => {   // 打包节点的记录: appId 不给就�
 // 现在 workflow.list
 // ═ 技能 ═
 // 只写猜不到的事实, 只有注释、不跑
+// 【横屏大图】生图要 16:9: grok 类不认 size, 给 ai.image {ratio:'16:9', resolution:'2k'}(AI 配置里本地家已写好改法)
+// 【质检门的坑】判断节点的 expr 写在节点顶层(不在 params); 对话节点出 JSON 时把要比的分数起成自定义口(如 min),
+//   从这个口连到判断, expr 写 Number(input.value) >= 8.5。运行记录会截断大值(STR_MAX 4000), 要节点的整份输出就 debugRun 直接拿 outputs。
+//   一整套例子: 「短剧流水线 · 写稿到配音」(编剧 → 核对∥审稿 → 改稿 → 终审 → 判断 → 配音质检, 不过线再改一轮), 用法见扩展库技能 mini-drama。
 // 【搭工作流】搭、改、跑工作流前: 先 workflow.catalog 看节点 id、端口、内建 kind 的参数、各模态现在用哪个模型, 别凭记忆猜。
 //   要 AI 能力一律用内置 wfnode-ai(模态是 params.mode), 别自建带大模型的节点; 只有纯数据/纯逻辑的小工具才值得造节点应用。
 //   先想清几个节点、怎么连、哪里分叉汇合; 需求模糊就带草图(节点列表+连线一句话)先问用户。
@@ -18292,10 +18600,14 @@ Studio.boot();
 /*BLOCK*/{"id":"petri:plugin-manager","name":"插件管理","icon":"🛠","version":2,"caps":["plugin","browser"]}/*CODE*/
 'use strict';
 // ═ 自报 ═
-// 改浏览器插件 Colony Bridge 的源码(写前自动快照、可回滚、重载、验活), 并经插件操控浏览器(标签页、CDP、执行脚本、点、填、截图); 给小应用一个作品运行窗(单独窗口跑别人写的 HTML, 卡死不连累 Colony)
+// 改浏览器插件 Colony Bridge 的源码(写前自动快照、可回滚、重载、验活), 并经插件操控浏览器(标签页、CDP、执行脚本、点、填、截图); 给小应用一个作品运行窗(单独窗口跑别人写的 HTML, 卡死不连累 Colony); 接远程 MCP; 给开源网址学外面的技能和插件(要时花额度改写成 Colony 的做法), 能导出给别的 Colony 和 agent
 // 数据 {"prefix": "pluginfs:", "label": "插件源码快照", "kind": "backup"}
+// 数据 {"prefix": "plugin.mcp.", "label": "接入的远程 MCP", "kind": "config"}
+// 数据 {"prefix": "plugin.ext.", "label": "学来的技能和插件", "kind": "data"}
 // ═ 技能 ═
 // 只写猜不到的事实, 只有注释、不跑
+// 【录屏时截图】截图(browser.screenshot / browser.cdp 的 Page.captureScreenshot)自动把后台页切到前台、调试截图超时改截可见区, 不用绕;
+//   高清: 先 Emulation.setDeviceMetricsOverride 放大再截。录「浏览器」应用: 录前 ui.state 看它的窗没收起, 收起时录到的是桌面。
 // 【插件能做什么】经 Colony Bridge 插件碰用户的真浏览器。按任务挑最轻的一条, 轻的不行再往下:
 //   ① 只要数据: browser.fetch 代发请求(带用户 IP 和登录 cookie, 二进制给 binary:true, 可并发; Origin 固定是插件, 少数校验来源的接口会拒)。
 //      网站有接口(JSON/RSS/公开 API)就别开页面; data.get 网址被拦(503/跨域)时也改走它。
@@ -18324,6 +18636,20 @@ Studio.boot();
 //   实测过别的路都不行: 小应用里嵌 iframe、宿主 stem.mount 的隔离窗跑死循环都会卡住调用方。
 //   作品是 data: 网址: 没有 colony、读不到本机存储(localStorage 报 SecurityError), 作品要存东西就只在内存里; 外网能访问。
 //   同时最多 4 个; 闲 idle 秒(默认 120)没人碰自动关; 开它的小应用窗一关, 它开的作品窗 5 秒内跟着关。没装插件就没有这几个能力(先 colony.call 试, 报错就退回只看代码)
+// 【远程 MCP】要接 Claude/Cursor/pi 的 mcp.json 或某个远程 MCP 网址时: plugin.mcp.connect {url} 或 {config: mcp.json};
+//   plugin.mcp.tools {id} 看参数 → plugin.mcp.call {id, name, arguments}。只接远程 HTTP/SSE(官方 Registry 约 86% 是这类);
+//   本机 npx/uvx 的 stdio 会报错, 要本机桥起进程。跨域自动改走 browser.fetch; token 放 auth; 会话过期自动重握手。
+// 【扩展库】要学外面的技能/MCP/插件, 或要用学来的时。只学用得上的, 一次一个, 别整目录灌:
+//   找: plugin.ext.search {q, kind?, ecosystem?} 市场一起搜(技能 ClawHub、MCP 官方 Registry、插件 npm 的 pi/openclaw/Claude Code
+//   + DeepSeek Harness 的 DSH Plugin Hub; DSH 包常常只套了一个 MCP: 远程的学时直接接上, 本机的接不了),
+//   回的 ref 直接给 plugin.ext.learn {url: ref}。也认 ClawHub/npm 网页、GitHub 仓库/目录/SKILL.md、raw、贴正文、导出包。
+//   MCP: mcp:名 有远程端点就直接接上; 只发本机包(npm/pypi/oci stdio)的接不了; 401 要 token(auth), 只有 OAuth 的接不了;
+//   Registry 里不少端点已经停了: 报「连不上」就换一个。
+//   分级: direct 直接用; map 工具名已按表换成 Colony 的; adapt(插件、带脚本的技能)要 plugin.ext.adapt 花额度改写,
+//   先 {id, estimate:true} 估价告诉用户, 他点头再跑(实测一条约 1.5–2.5 万 token)。用: plugin.ext.list {q} → plugin.ext.read {id}。
+//   给别人: plugin.ext.export 出 colony-ext/1 包(别的 Colony 装上不花额度) 或 {ids:[id], format:"skill"} 出标准 SKILL.md
+//   (头里带 source 网址, hermes/pi/Claude Code 能直接装)。用户在插件管理的窗里能搜市场、学、适配、导出。
+//   块自带的技能段不在这里: 那个用 skill.read {id:块, name}。
 // ═ 插件通道 ═
 // 插件的内容脚本在本页收 postMessage {__colonyRelay:{id, op, req}}, 回 {__colonyRelayResult:{id, ok|error, result}}
 const 发 = (op, extra, ms) => new Promise((resolve, reject) => {
@@ -18369,6 +18695,741 @@ async function 稳写(p, text, force) {
   await 写(p, text);
   return { ok: true, file: p, bytes: text.length, backedUp: backedUp && backedUp.ts };
 }
+// ═ MCP ═
+// 远程 MCP(Streamable HTTP / SSE): 给网址或粘贴 mcp.json 直连, 工具经 plugin.mcp.call 调。
+// 能力挂在 plugin. 下(本块清单只有 plugin、browser 两个前缀, 挂 mcp. 就成了私有的, agent 调不到)。
+// 先宿主页直接 fetch, 跨域被拦再走 browser.fetch(插件代发)。本机 npx/uvx 起进程的 stdio MCP 这里接不了
+// 本段和扩展库、界面都在装配前跑, 用不了装配里的 P: 用 P0 登记
+const P0 = (path, fn, desc, schema) => ctx.provide(path, fn, { desc, schema: schema || {}, frames: false });
+const MCP = {
+  库: 'plugin.mcp.servers',
+  版: '2025-06-18',
+  // 网址里带的密钥(?exaApiKey=… 这类)拆进 secret 单独存: 列表、界面、导出包只见干净网址, 发请求时 址() 拼回
+  密: /key|token|secret|auth|password|pass/i,
+  拆(url) {
+    const u = new URL(url), secret = {};
+    for (const [k, v] of [...u.searchParams]) if (MCP.密.test(k)) { secret[k] = v; u.searchParams.delete(k); }
+    return { url: u.toString(), secret: Object.keys(secret).length ? secret : undefined };
+  },
+  址(s) { const u = new URL(s.url); for (const [k, v] of Object.entries(s.secret || {})) u.searchParams.set(k, v); return u.toString(); },
+  async 全() {
+    const all = (await ctx.kv.get(MCP.库).catch(() => null)) || {};
+    let 旧 = false;   // 早先存的网址还带着密钥: 拆一次存回
+    for (const s of Object.values(all)) { const x = MCP.拆(s.url); if (x.secret) { s.url = x.url; s.secret = Object.assign({}, s.secret, x.secret); 旧 = true; } }
+    if (旧) await ctx.kv.set(MCP.库, all);
+    return all;
+  },
+  公开: s => ({ id: s.id, url: s.url, 要密钥: [...Object.keys(s.secret || {}), ...s.auth ? ['auth'] : []] }),
+  async 存(all) { await ctx.kv.set(MCP.库, all); 界面.脏(); },
+  async 取(id) { return (await MCP.全())[id] || (() => { throw new Error('没接这个 MCP: ' + id + ', 用 plugin.mcp.list 看'); })(); },
+  名: s => String(s || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'server',
+  解(t) { // 回的是 SSE(event:/data: 行) 或一整段 JSON
+    t = String(t || '').trim();
+    if (!t) return null;
+    if (!/^(event|data|id):/m.test(t)) return JSON.parse(t);
+    const d = t.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).filter(Boolean);
+    return d.length ? JSON.parse(d[d.length - 1]) : null;
+  },
+  头(s) {
+    const h = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'Mcp-Protocol-Version': s.protocol || MCP.版 };
+    if (s.session) h['Mcp-Session-Id'] = s.session;
+    if (s.auth) h.Authorization = /^Bearer /i.test(s.auth) ? s.auth : 'Bearer ' + s.auth;
+    return h;
+  },
+  async rpc(s, method, params, id) { // 回 result; 新给的会话号记进 s
+    const body = JSON.stringify({ jsonrpc: '2.0', method, ...id !== undefined && { id }, ...params !== undefined && { params } });
+    let r;
+    try {
+      const res = await fetch(MCP.址(s), { method: 'POST', headers: MCP.头(s), body, signal: AbortSignal.timeout(60000) });
+      r = { status: res.status, text: await res.text(), sid: res.headers.get('mcp-session-id') };
+    } catch (e) {
+      const x = await ctx.call('browser.fetch', { url: MCP.址(s), method: 'POST', headers: MCP.头(s), body, timeout: 60000 })
+        .catch(e2 => { throw new Error('MCP 连不上 ' + s.url + ': 服务停了、网址不对, 或它拒绝浏览器来的请求(' + e2.message.split('(')[0] + ')'); });
+      const hs = x.headers || {}, k = Object.keys(hs).find(k => k.toLowerCase() === 'mcp-session-id');
+      r = { status: x.status, text: typeof x.text === 'string' ? x.text : JSON.stringify(x.json), sid: k && hs[k] };
+    }
+    if (r.sid) s.session = r.sid;
+    if (r.status === 401 || r.status === 403) throw new Error('MCP ' + s.url + ' 要登录(HTTP ' + r.status + '): 有 API token 就放 auth 再接; 只支持 OAuth 网页登录的这里还接不了');
+    if (r.status >= 400) throw new Error('MCP ' + method + ' HTTP ' + r.status + ': ' + String(r.text || '').slice(0, 200));
+    if (id === undefined) return null;   // 通知没有回话
+    const j = MCP.解(r.text);
+    if (j && j.error) throw new Error('MCP ' + method + ': ' + (j.error.message || JSON.stringify(j.error)));
+    return j && j.result;
+  },
+  async 握手(s) {
+    const r = await MCP.rpc(s, 'initialize', { protocolVersion: MCP.版, capabilities: {}, clientInfo: { name: 'colony', version: '1' } }, 1);
+    s.protocol = (r && r.protocolVersion) || MCP.版;
+    s.serverInfo = r && r.serverInfo;
+    await MCP.rpc(s, 'notifications/initialized').catch(() => { });
+    s.tools = ((await MCP.rpc(s, 'tools/list', {}, 2)) || {}).tools || [];
+    return s;
+  },
+};
+P0('plugin.mcp.list', async () => Object.values(await MCP.全()).map(s => ({ ...MCP.公开(s), tools: (s.tools || []).length, server: s.serverInfo && [s.serverInfo.title || s.serverInfo.name, s.serverInfo.version].filter(Boolean).join(' ') })),   // 不回图标(base64 可以很大)
+  '已接入的远程 MCP(不回密钥, 要密钥列出它存着哪几样)');
+P0('plugin.mcp.connect', async a => {
+  let { id, url, auth } = a;
+  if (a.config) { // Claude / Cursor / pi 的 mcp.json: {mcpServers: {名: {url | serverUrl, headers}}}
+    const raw = typeof a.config === 'string' ? JSON.parse(a.config) : a.config, all = raw.mcpServers || raw.servers || raw;
+    const k = id || Object.keys(all)[0], c = all[k] || {};
+    if (c.command) throw new Error(k + ' 是本机起进程的 stdio MCP(' + c.command + '), 这里只接远程 HTTP/SSE');
+    id = k; url = url || c.url || c.serverUrl;
+    auth = auth || (c.headers && (c.headers.Authorization || c.headers.authorization));
+  }
+  if (!url) throw new Error('给 url, 或 config 贴 mcp.json');
+  id = MCP.名(id || new URL(url).hostname.replace(/^(www|mcp)\./, '').split('.')[0]);
+  const s = await MCP.握手({ id, ...MCP.拆(url), auth });
+  const all = await MCP.全();
+  all[id] = s;
+  await MCP.存(all);
+  return { ...MCP.公开(s), serverInfo: s.serverInfo, tools: s.tools.map(t => ({ name: t.name, description: String(t.description || '').split('\n')[0].slice(0, 120) })) };
+}, '接入一个远程 MCP: url 给网址, 或 config 贴 mcp.json(多个服务时 id 选一个); auth 放 token; 回工具清单',
+  { url: 'string?', id: 'string?', auth: 'string?', config: 'string|object?' });
+P0('plugin.mcp.tools', async a => (await MCP.取(a.id)).tools || [], '一个 MCP 的工具清单(含参数 inputSchema)', { id: 'string' });
+P0('plugin.mcp.call', async a => {
+  const s = await MCP.取(a.id), 原 = s.session;
+  const go = () => MCP.rpc(s, 'tools/call', { name: a.name, arguments: a.arguments || {} }, Date.now() % 1e9);
+  let r;
+  try { r = await go(); } catch (e) { // 会话过期(404/400): 重新握手一次再调
+    if (!/HTTP (400|404)/.test(e.message)) throw e;
+    delete s.session; await MCP.握手(s); r = await go();
+  }
+  if (s.session !== 原) { const all = await MCP.全(); all[s.id] = s; await MCP.存(all); }
+  return r;
+}, '调已接入 MCP 的一个工具: 先 plugin.mcp.tools 看参数', { id: 'string', name: 'string', arguments: 'object?' });
+P0('plugin.mcp.remove', async a => {
+  const all = await MCP.全();
+  if (!all[a.id]) throw new Error('没接这个 MCP: ' + a.id);
+  delete all[a.id];
+  await MCP.存(all);
+  return { removed: a.id };
+}, '去掉一个已接入的 MCP', { id: 'string' });
+// ═ 扩展库 ═
+// 从外面学来的技能和插件。市场能搜能学: 技能 ClawHub(zip)、MCP 官方 Registry(远程的直接接)、
+// 插件 npm(tgz; pi / openclaw / Claude Code 按关键词, DeepSeek Harness 走它的社区市场 DSH Plugin Hub, 包也在 npm);
+// 也认 GitHub 仓库/目录/SKILL.md、raw 链接、贴 SKILL.md 正文。一次学一个: 只学用得上的;
+// 每条都记着来源网址: 别的 Colony 拿网址或导出包(colony-ext/1)、别的 agent 拿导出的 SKILL.md, 都能学到同一份。
+// 分级: direct 纯指令, 直接用 / map 只用到网页类工具, 按表换成 Colony 能力名, 不花额度 /
+// adapt 要本机执行或是插件代码, 要花额度让模型改写成用 Colony 能力的做法(plugin.ext.adapt, 先 estimate 看要多少)。
+// 默认不进系统提示: 会越来越多; agent 用 plugin.ext.list 搜, 置顶的才把名字列进去(最多 10 条)
+const 扩展 = {
+  前: 'plugin.ext.item.',
+  索: 'plugin.ext.index',
+  原上限: 60000,   // 插件源码最多收这么多字去适配: 再多模型也读不完, 额度白花
+  单文件: 15000,
+  async 索取() { return (await ctx.kv.get(扩展.索).catch(() => null)) || []; },
+  async 取(id) {
+    const it = await ctx.kv.get(扩展.前 + id).catch(() => null);
+    if (!it) throw new Error('扩展库里没有 ' + id + ', 用 plugin.ext.list 看有哪些');
+    return it;
+  },
+  原文: it => [it.kind === 'plugin' ? '' : String(it.body || '')].concat((it.files || []).map(f => '=== ' + f.path + ' ===\n' + f.text)).filter(Boolean).join('\n\n'),
+  行: it => ({ id: it.id, kind: it.kind, name: it.name, description: String(it.description || '').slice(0, 160),
+    grade: it.grade, source: it.source, adapted: !!it.adapted, adaptedBy: it.adaptedBy || '', pinned: !!it.pinned,
+    origChars: 扩展.原文(it).length, cost: it.cost || null, at: it.at }),
+  排: Promise.resolve(),   // 索引是读-改-写: 并发学(一次学一整个目录)会互相盖掉, 排成一个一个来
+  改索(fn) {
+    const p = 扩展.排.then(async () => { await ctx.kv.set(扩展.索, fn(await 扩展.索取())); 界面.脏(); });
+    扩展.排 = p.catch(() => { });
+    return p;
+  },
+  async 存(it) {
+    const old = await ctx.kv.get(扩展.前 + it.id).catch(() => null);
+    if (old && old.pinned && it.pinned === undefined) it.pinned = true;   // 重学一遍不丢置顶
+    await ctx.kv.set(扩展.前 + it.id, it);
+    const 行 = 扩展.行(it);
+    await 扩展.改索(l => [行].concat(l.filter(x => x.id !== it.id)));
+    return 行;
+  },
+  async 删(id) {
+    await ctx.kv.del(扩展.前 + id);
+    await 扩展.改索(l => l.filter(x => x.id !== id));
+  },
+  async 重建索引() { // 索引坏了、丢了: 照条目重排
+    const ks = (await ctx.kv.list(扩展.前)).map(e => e.key);
+    const items = (await Promise.all(ks.map(k => ctx.kv.get(k).catch(() => null)))).filter(Boolean);
+    await 扩展.改索(() => items.map(扩展.行).sort((x, y) => y.at - x.at));
+    return items.length;
+  },
+  名: s => String(s || '').trim().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'ext',
+  析(md) { // SKILL.md: 头上 --- 之间是 YAML; 只认顶层 key: value, 和 key: | / > 的多行块
+    md = String(md || '').replace(/^\uFEFF/, '');
+    const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(md), meta = {};
+    if (!m) return { meta, body: md };
+    const ls = m[1].split(/\r?\n/);
+    for (let i = 0; i < ls.length; i++) {
+      const k = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(ls[i]);
+      if (!k) continue;
+      let v = k[2].trim();
+      if (/^[|>][-+]?$/.test(v)) { // 多行块: 收后面缩进的行
+        const 收 = [];
+        while (i + 1 < ls.length && (/^\s+\S/.test(ls[i + 1]) || !ls[i + 1].trim())) 收.push(ls[++i].trim());
+        v = 收.join(v[0] === '>' ? ' ' : '\n').trim();
+      }
+      meta[k[1]] = v.replace(/^(["'])([\s\S]*)\1$/, '$2');
+    }
+    return { meta, body: m[2] };
+  },
+  // 分级只看正文点名的工具: 跑命令、跑代码的换不掉(Colony 起不了进程) → adapt; 读写文件、上网的有对应能力, 按表换名 → map
+  执行词: ['terminal', 'execute_code', 'run_terminal', 'run_command', 'bash', 'shell_exec', 'subprocess', 'process_spawn', 'python3?\\s+\\S+\\.py', 'npx\\s', 'uvx\\s', 'pip install', 'npm install'],
+  换表: [
+    [/\bweb_search\b/g, 'browser.fetch(调搜索接口)'],
+    [/\bweb_extract\b/g, 'browser.fetch 或 browser.frameRead(读网页)'],
+    [/\bbrowser_navigate\b/g, 'browser.frameOpen'],
+    [/\bbrowser_click\b/g, 'browser.frameClick'],
+    [/\bbrowser_type\b/g, 'browser.frameType'],
+    [/\bbrowser_snapshot\b/g, 'browser.frameSnapshot'],
+    [/\bread_file\b/g, 'data.get(次元口袋里的文件)'],
+    [/\bwrite_file\b/g, 'data.set(存进次元口袋)'],
+    [/\bimage_generate\b/g, 'ai.image'],
+    [/\btext_to_speech\b/g, 'ai.speak'],
+    [/\bvision_analyze\b/g, 'ai.chat(带图)'],
+  ],
+  级(body) {
+    const t = String(body || ''),
+      exec = 扩展.执行词.reduce((n, w) => n + (t.match(new RegExp('\\b' + w, 'gi')) || []).length, 0),
+      web = 扩展.换表.reduce((n, [re]) => n + (t.match(re) || []).length, 0);
+    if (exec) return { grade: 'adapt', reason: '要跑命令或代码 ' + exec + ' 处(Colony 起不了进程), 要花额度改写' };
+    if (web) return { grade: 'map', reason: '点到的工具 ' + web + ' 处都有对应能力, 已按表换名' };
+    return { grade: 'direct', reason: '纯指令/知识, 不点工具' };
+  },
+  换: body => 扩展.换表.reduce((t, [re, to]) => t.replace(re, to), String(body || '')),
+  async 拉(url) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.text();
+    } catch (e) {   // 跨域或被限流: 插件代发
+      const r = await ctx.call('browser.fetch', { url, timeout: 30000 });
+      if (r.status >= 400) throw new Error('拉不到 ' + url + ': HTTP ' + r.status);
+      return typeof r.text === 'string' ? r.text : JSON.stringify(r.json);
+    }
+  },
+  gh(url) { // GitHub 网址拆成 {o, r, ref, path, file}; 分支名带斜杠的认不全
+    let m = /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/.exec(url);
+    if (m) return { o: m[1], r: m[2], ref: m[3], path: m[4], file: true };
+    m = /^https?:\/\/github\.com\/([^/]+)\/([^/#?]+)(?:\/(tree|blob)\/([^/#?]+)(?:\/([^#?]*))?)?\/?(?:[#?].*)?$/.exec(url);
+    return m && { o: m[1], r: m[2].replace(/\.git$/, ''), ref: m[4] || '', path: (m[5] || '').replace(/\/$/, ''), file: m[3] === 'blob' };
+  },
+  raw: (g, path) => 'https://raw.githubusercontent.com/' + g.o + '/' + g.r + '/' + g.ref + '/' + path,
+  页: (g, path) => 'https://github.com/' + g.o + '/' + g.r + '/blob/' + g.ref + '/' + path,
+  async 树(g) { // 文件清单: 先走网页的 tree-list(不限次; API 不带 token 一小时只给 60 次), 不行再走 API。只回 {path}
+    const 页 = 'https://github.com/' + g.o + '/' + g.r, 拿 = u => ctx.call('browser.fetch', { url: u, timeout: 30000 }).then(x => x.text || '');
+    try {
+      if (!g.ref) g.ref = (/data-default-branch="([^"]+)"|"defaultBranch":"([^"]+)"/.exec(await 拿(页)) || []).slice(1).find(Boolean) || 'main';
+      const oid = (/Commit\/([0-9a-f]{40})/.exec(await 拿(页 + '/commits/' + g.ref + '.atom')) || [])[1];   // 这个分支最新的 commit
+      if (!oid) throw new Error('拿不到 ' + g.ref + ' 的 commit');
+      const y = await ctx.call('browser.fetch', { url: 页 + '/tree-list/' + oid, headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, timeout: 30000 });
+      const ps = (y.json || JSON.parse(y.text)).paths;
+      if (!Array.isArray(ps) || !ps.length) throw new Error('tree-list 没回文件');
+      return 扩展.夹里(ps.map(path => ({ path })), g);
+    } catch (e) {
+      const api = 'https://api.github.com/repos/' + g.o + '/' + g.r;
+      if (!g.ref) g.ref = JSON.parse(await 扩展.拉(api)).default_branch || 'main';
+      const t = JSON.parse(await 扩展.拉(api + '/git/trees/' + encodeURIComponent(g.ref) + '?recursive=1'));
+      return 扩展.夹里((t.tree || []).filter(x => x.type === 'blob').map(x => ({ path: x.path })), g);
+    }
+  },
+  夹里: (fs, g) => g.path ? fs.filter(f => f.path.startsWith(g.path + '/')) : fs,
+  async 收技能(md, source, 默认名, 附 = []) { // 附: 同目录的脚本、参考文件; 有脚本的技能要适配才能用
+    const { meta, body } = 扩展.析(md);
+    if (!meta.name && /^\s*(<!doctype|<html|<\?xml|\{)/i.test(String(md))) throw new Error('这不是技能: 拿到的是网页或 JSON, 不是 SKILL.md(要有 --- name/description --- 头, 或至少是 markdown)');
+    const 带 = String(meta['colony-adapted']) === 'true';   // 别的 Colony 导出的: 适配好的正文原样收, 不再花额度
+    附 = 附.filter(f => f.text).map(f => ({ path: f.path, text: f.text.slice(0, 扩展.单文件) }));
+    const 脚 = 附.filter(f => /\.(py|sh|js|mjs|cjs|ts)$/i.test(f.path));
+    let g = 带 ? { grade: meta['colony-grade'] || 'adapt', reason: '别的 Colony 已经适配好' } : 扩展.级(body);
+    if (!带 && 脚.length) g = { grade: 'adapt', reason: '带 ' + 脚.length + ' 个脚本(' + 脚.map(f => f.path).slice(0, 3).join(', ') + '), 要改写成 Colony 能跑的' };
+    const name = meta.name || 默认名 || (/^#\s+(.+)/m.exec(body) || [])[1] || 'unnamed';
+    const it = { id: 扩展.名(name), kind: 'skill', name, description: meta.description || '', grade: g.grade,
+      reason: g.reason, source: meta.source || source, meta, body: 带 ? '' : body, files: 带 ? [] : 附, at: Date.now() };
+    if (带) { it.adapted = body.trim(); it.adaptedBy = meta['colony-adapted-by'] || '导入的'; }
+    else if (g.grade === 'map') { it.adapted = 扩展.换(body); it.adaptedBy = '按表替换'; }
+    return 扩展.存(it);
+  },
+  async 收仓库插件(g, tree, source) { // GitHub 仓库/目录: 挑说明和源码拉下来; 测试、构建产物不要
+    const 内 = f => g.path ? f.path.slice(g.path.length + 1) : f.path, 深 = f => 内(f).split('/').length,
+      要 = f => /(^|\/)(readme[^/]*\.md|package\.json|plugin\.ya?ml|manifest\.json|mcp\.json|pyproject\.toml)$/i.test(f.path),
+      码 = f => /\.(ts|tsx|js|mjs|py)$/.test(f.path) && !/\.(test|spec|d)\.[a-z]+$/.test(f.path)
+        && !/(^|\/)(tests?|__tests__|dist|build|node_modules|\.github)\//i.test(内(f));   // 只看给的目录以内: 插件本身在 examples/ 下也收
+    const 候 = tree.filter(要).sort((x, y) => 深(x) - 深(y)).slice(0, 4).concat(tree.filter(码).sort((x, y) => 深(x) - 深(y))).slice(0, 40);
+    const files = [];
+    for (let i = 0, n = 0; i < 候.length && n < 扩展.原上限; i += 6)   // 拿不到大小: 边拉边数, 够了就停
+      for (const f of await Promise.all(候.slice(i, i + 6).map(async f => ({ path: 内(f), text: await 扩展.拉(扩展.raw(g, f.path)).catch(() => '') }))))
+        if (f.text && n < 扩展.原上限) { files.push(f); n += Math.min(f.text.length, 扩展.单文件); }
+    return 扩展.收插件(files, source, g.path ? g.r + '-' + g.path.split('/').pop() : g.r, 'GitHub');
+  },
+  async 收插件(files, source, 名, 来, mcp) { // 说明在前、源码由浅到深, 截到 原上限; mcp: DSH 包里套的 MCP
+    const 说 = f => /(^|\/)(readme[^/]*\.md|package\.json|plugin\.ya?ml|manifest\.json|openclaw\.plugin\.json|mcp\.json|pyproject\.toml)$/i.test(f.path);
+    const 码 = f => /\.(ts|tsx|js|mjs|cjs|py)$/.test(f.path) && !/\.(test|spec|d)\.[a-z]+$/.test(f.path);
+    const 深 = f => f.path.split('/').length, 排 = files.filter(说).sort((x, y) => 深(x) - 深(y)).slice(0, 4)
+      .concat(files.filter(码).sort((x, y) => 深(x) - 深(y) || x.text.length - y.text.length));
+    const 留 = [];
+    let n = 0;
+    for (const f of 排) {
+      if (n >= 扩展.原上限) break;
+      const t = f.text.length > 扩展.单文件 ? f.text.slice(0, 扩展.单文件) + '\n…(后面截掉了)' : f.text;
+      留.push({ path: f.path, text: t });
+      n += t.length;
+    }
+    if (!留.length) throw new Error('没拿到能读的说明或源码');
+    const pk = 留.find(f => /(^|\/)package\.json$/.test(f.path)), rd = 留.find(f => /readme/i.test(f.path));
+    let desc = '', pj = {};
+    try { pj = pk ? JSON.parse(pk.text) : {}; desc = pj.description || ''; } catch (e) { }
+    if (!desc && rd) desc = (rd.text.split(/\n\s*\n/).find(p => p.trim() && !/^\s*[#!<[|]/.test(p)) || '').trim().slice(0, 200);
+    const 码数 = 留.filter(码).length;
+    const it = { id: 扩展.名(名), kind: 'plugin', name: pj.name || 名, description: desc, grade: 'adapt',
+      reason: (来 ? 来 + ' 的' : '') + '插件代码(' + 码数 + ' 个源文件 ' + n + ' 字)跑不了, 要花额度改写成 Colony 的做法', source, files: 留, at: Date.now() };
+    if (mcp) Object.assign(it, { mcp, reason: mcp.url
+      ? '这个包只是套了一个远程 MCP(' + mcp.url + '): 直接 plugin.mcp.connect 接上就行, 不用花额度适配'
+      : '这个包只是套了一个本机 MCP(' + (mcp.command + ' ' + mcp.args).trim() + '): 浏览器起不了进程, 接不了; 适配也只能写成交给本机 agent 做' });
+    if (mcp && mcp.url) it.grade = 'mcp';
+    return 扩展.存(it);
+  },
+  // —— 市场: 技能 ClawHub, MCP 官方 Registry, 插件 npm(pi / openclaw / Claude Code 各自的关键词)。都是公开接口, 不要 key ——
+  市场: {
+    skill: { 名: 'ClawHub', 搜: q => 'https://clawhub.ai/api/v1/search?q=' + encodeURIComponent(q) },
+    mcp: { 名: 'MCP Registry', 搜: q => 'https://registry.modelcontextprotocol.io/v0/servers?limit=30&search=' + encodeURIComponent(q) },
+    dsh: { 名: 'DSH Plugin Hub', 搜: q => 'https://api.dshpluginhub.ai/api/v1/packages?q=' + encodeURIComponent(q) },   // DeepSeek Harness 的社区市场, 包本身在 npm
+    plugin: { 名: 'npm', 词: ['pi-package', 'openclaw-plugin', 'claude-code-plugin'],
+      搜: (q, 词) => 'https://registry.npmjs.org/-/v1/search?size=20&text=' + encodeURIComponent((q + ' keywords:' + 词).trim()) },
+  },
+  async json(url) { const t = await 扩展.拉(url); return JSON.parse(t); },
+  async 搜(a) {
+    const q = String(a.q || '').trim(), 要 = a.kind ? [a.kind] : ['skill', 'mcp', 'plugin'], out = {};
+    await Promise.all(要.map(async k => {
+      try {
+        if (k === 'skill') out.skill = ((await 扩展.json(扩展.市场.skill.搜(q))).results || []).slice(0, a.n || 10).map(x => ({
+          ref: 'clawhub:' + x.install.reference, name: x.displayName, summary: String(x.summary || '').slice(0, 160),
+          downloads: x.downloads, official: !!x.official, suspicious: !!(x.native && x.native.skill && x.native.skill.isSuspicious) }));
+        if (k === 'mcp') {
+          const 见 = new Set();
+          out.mcp = ((await 扩展.json(扩展.市场.mcp.搜(q))).servers || []).map(x => x.server).filter(s => !见.has(s.name) && 见.add(s.name))
+            .slice(0, a.n || 10).map(s => {
+              const 远 = (s.remotes || [])[0], 要钥 = 远 && (远.headers || []).some(h => h.isRequired);
+              return { ref: 'mcp:' + s.name, name: s.name, summary: String(s.description || '').slice(0, 160),
+                能接: 远 ? (要钥 ? '远程, 要 token' : '远程, 直接接') : '只有本机包(' + (s.packages || []).map(p => p.registryType).join('/') + '), 接不了',
+                url: 远 && 远.url, repo: s.repository && s.repository.url };
+            });
+        }
+        if (k === 'plugin') {
+          const 词 = a.ecosystem ? [a.ecosystem].filter(w => w !== 'deepseek-harness') : 扩展.市场.plugin.词, 要dsh = !a.ecosystem || a.ecosystem === 'deepseek-harness';
+          const dsh = 要dsh ? 扩展.json(扩展.市场.dsh.搜(q)).then(r => (r.items || []).filter(x => !x.deprecated).slice(0, a.n || 10).map(x => ({ ref: 'npm:' + x.packageName,
+            name: x.packageName, ecosystem: 'deepseek-harness', summary: String(x.summary || '').slice(0, 160), repo: x.repository && 'https://github.com/' + x.repository,
+            分: (x.github && x.github.stars || 0) * 10 + (x.weeklyDownloads || 0), verified: !!x.verified })), () => []) : Promise.resolve([]);
+          const 各 = await Promise.all(词.map(w => 扩展.json(扩展.市场.plugin.搜(q, w)).then(r => (r.objects || []).map(o => ({ o, w })), () => [])));
+          const npm = 各.flat().sort((x, y) => (y.o.downloads?.monthly || y.o.score?.final || 0) - (x.o.downloads?.monthly || x.o.score?.final || 0))
+            .slice(0, a.n || 10).map(({ o, w }) => ({ ref: 'npm:' + o.package.name, name: o.package.name, ecosystem: w,
+              summary: String(o.package.description || '').slice(0, 160), repo: o.package.links && o.package.links.repository }));
+          const 见 = new Set();   // 几家轮流排, 同一个包只留一次
+          const 轮 = [await dsh].concat(词.map(w => npm.filter(x => x.ecosystem === w)));
+          out.plugin = [];
+          for (let i = 0; out.plugin.length < (a.n || 10) && 轮.some(l => l[i]); i++) 轮.forEach(l => { const x = l[i]; if (x && !见.has(x.ref)) { 见.add(x.ref); out.plugin.push(x); } });
+          out.plugin = out.plugin.slice(0, a.n || 10);
+        }
+      } catch (e) { out[k] = { error: e.message }; }
+    }));
+    return out;
+  },
+  // —— 解包: ClawHub 给 zip, npm 给 tgz; 都在浏览器里解(DecompressionStream), 只留文本 ——
+  async 解压(bytes, how) {
+    return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream(how))).arrayBuffer());
+  },
+  async zip(bin) {
+    const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength), td = new TextDecoder(), out = [];
+    let e = bin.length - 22;
+    while (e > 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+    if (e <= 0) throw new Error('不是 zip');
+    for (let i = 0, p = dv.getUint32(e + 16, true), n = dv.getUint16(e + 10, true); i < n; i++) {
+      const m = dv.getUint16(p + 10, true), cs = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true),
+        lo = dv.getUint32(p + 42, true), name = td.decode(bin.subarray(p + 46, p + 46 + nl));
+      p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+      if (name.endsWith('/')) continue;
+      const d0 = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true), raw = bin.subarray(d0, d0 + cs);
+      out.push({ path: name, text: td.decode(m === 0 ? raw : await 扩展.解压(raw, 'deflate-raw')) });
+    }
+    return out;
+  },
+  async tgz(bin) {
+    const tar = await 扩展.解压(bin, 'gzip'), td = new TextDecoder(), out = [];
+    for (let p = 0; p + 512 <= tar.length;) {
+      const h = tar.subarray(p, p + 512);
+      if (!h[0]) break;
+      const s = b => td.decode(b).replace(/\0[\s\S]*$/, ''), size = parseInt(s(h.subarray(124, 136)).trim() || '0', 8);
+      const pre = s(h.subarray(345, 500)), name = (pre ? pre + '/' : '') + s(h.subarray(0, 100)), t = h[156];
+      if (t === 48 || t === 0) out.push({ path: name.replace(/^package\//, ''), text: td.decode(tar.subarray(p + 512, p + 512 + size)) });
+      p += 512 + Math.ceil(size / 512) * 512;
+    }
+    return out;
+  },
+  async 下(url) { // 二进制: 走插件代发(跨域、不限次)
+    const r = await ctx.call('browser.fetch', { url, binary: true, timeout: 60000 });
+    if (r.status >= 400) throw new Error('下载 ' + url + ' HTTP ' + r.status);
+    return Uint8Array.from(atob(r.base64), c => c.charCodeAt(0));
+  },
+  文本: f => /\.(md|txt|json|ya?ml|toml|ts|tsx|js|mjs|cjs|py|sh)$/i.test(f.path) && !/(^|\/)(node_modules|dist|build|tests?|__tests__)\//.test(f.path)
+    && !/(^|\/)(license|licence|copying|notice|changelog)[^/]*$/i.test(f.path),   // 授权、更新记录对做事没用, 只占额度
+  async 收文件(files, source, 默认名, 来) { // 包里有 SKILL.md 就是技能(多个就要选), 没有就是插件
+    files = files.filter(扩展.文本);
+    const sk = files.filter(f => /(^|\/)SKILL\.md$/i.test(f.path));
+    if (sk.length === 1) return 扩展.收技能(sk[0].text, source, 默认名, files.filter(f => f !== sk[0] && !/(^|\/)(_meta\.json|skill-card\.md)$/.test(f.path)));
+    if (sk.length > 1) return { 要选: true, 共: sk.length, 技能: sk.map(f => f.path.replace(/\/?SKILL\.md$/i, '')), 说明: '包里有多个技能, 去它的 GitHub 目录学其中一个' };
+    const mcp = 扩展.dshMCP(files);
+    if (mcp) return 扩展.收插件(files, source, 默认名, 来, mcp);
+    return 扩展.收插件(files, source, 默认名, 来);
+  },
+  dshMCP(files) { // DeepSeek Harness 的包常常只是套了一个 MCP: cordis.patch.yml 里一行 dsh-mcp-client, 配了 transport/url 或 command
+    const p = files.find(f => /(^|\/)cordis\.patch\.ya?ml$/.test(f.path));
+    if (!p || !/dsh-mcp-client/.test(p.text)) return null;
+    const 取 = k => (new RegExp('^\\s*' + k + ':\\s*[\'"]?([^\'"\\n#]+)', 'm').exec(p.text) || [])[1];
+    const tr = (取('transport') || '').trim(), url = (取('url') || '').trim(), cmd = (取('command') || '').trim();
+    const 远 = /^https?:/.test(url) && !/^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(url) && tr !== 'stdio';   // 本机地址、stdio 都不算远程
+    return { serverName: (取('serverName') || '').trim(), transport: tr || (url ? 'http' : 'stdio'), url: 远 ? url : '', command: cmd || (url && !远 ? url : ''),
+      args: ((/^\s*args:\s*\[([^\]]*)\]/m.exec(p.text) || [])[1] || '').replace(/['"]/g, '').trim() };
+  },
+  async 学网址(a) {
+    const url = String(a.url).trim();
+    let m;
+    // 市场简写(plugin.ext.search 回的 ref)和市场网页都认
+    if ((m = /^clawhub:([^/\s]+)\/([^/\s]+)$/.exec(url) || /^https?:\/\/(?:www\.)?clawhub\.ai\/([^/]+)\/(?:skills\/)?([^/?#]+)/.exec(url)))
+      return 扩展.收文件(await 扩展.zip(await 扩展.下('https://clawhub.ai/api/v1/download?slug=' + m[2] + '&ownerHandle=' + m[1])),
+        'https://clawhub.ai/' + m[1] + '/skills/' + m[2], m[2], 'ClawHub');
+    if ((m = /^npm:(.+)$/.exec(url) || /^https?:\/\/(?:www\.)?npmjs\.com\/package\/((?:@[^/]+\/)?[^/?#]+)/.exec(url) || /^https?:\/\/(?:www\.)?dshpluginhub\.ai\/(?:plugins|packages)\/((?:@[^/]+\/)?[^/?#]+)/.exec(url))) {
+      const meta = await 扩展.json('https://registry.npmjs.org/' + decodeURIComponent(m[1]).replace('/', '%2F') + '/latest');
+      const 生 = (meta.keywords || []).find(k => 扩展.市场.plugin.词.includes(k)) || (meta.dsh || (meta.keywords || []).some(k => /^(dsh|deepseek-harness|dsh-plugin)$/.test(k)) ? 'deepseek-harness' : '');
+      const r = await 扩展.收文件(await 扩展.tgz(await 扩展.下(meta.dist.tarball)), 'https://www.npmjs.com/package/' + meta.name, meta.name.split('/').pop(),
+        'npm ' + meta.name + '@' + meta.version + (生 ? ' · ' + 生 : ''));
+      if (r.grade === 'mcp' && !a.noConnect) { // 套壳的远程 MCP: 顺手接上
+        const it = await 扩展.取(r.id);
+        r.connected = await ctx.call('plugin.mcp.connect', { url: it.mcp.url, id: it.mcp.serverName || r.id, auth: a.auth }).then(x => x.id + ' ' + x.tools.length + ' 个工具', x => '没接上: ' + x.message);
+      }
+      return r;
+    }
+    if ((m = /^mcp:(.+)$/.exec(url))) { // 市场里的 MCP: 有远程端点就接上, 只有本机包就说清楚
+      const s = (((await 扩展.json(扩展.市场.mcp.搜(m[1]))).servers || []).map(x => x.server).find(x => x.name === m[1]));
+      if (!s) throw new Error('MCP Registry 里没有 ' + m[1]);
+      const 远 = (s.remotes || []).find(r => !(r.headers || []).some(h => h.isRequired)) || (s.remotes || [])[0];
+      if (!远) throw new Error(m[1] + ' 只发了本机包(' + (s.packages || []).map(p => p.registryType + '/' + (p.transport && p.transport.type)).join(', ') + '), 浏览器起不了进程, 接不了');
+      if ((远.headers || []).some(h => h.isRequired) && !a.auth) throw new Error(m[1] + ' 要 token: ' + 远.headers.map(h => h.description).join('; ') + '。拿到后 auth 带上再接');
+      return ctx.call('plugin.mcp.connect', { url: 远.url, id: m[1].split('/').pop(), auth: a.auth });
+    }
+    const g = 扩展.gh(url);
+    if (!g) { // 别的网址: 导出包或 SKILL.md
+      const t = await 扩展.拉(url);
+      if (/^\s*\{/.test(t) && /colony-ext\//.test(t)) return 扩展.装包(t);
+      return 扩展.收技能(t, url, url.split(/[?#]/)[0].split('/').filter(Boolean).slice(-2, -1)[0]);
+    }
+    if (g.file) {
+      if (!g.ref) g.ref = 'main';
+      return 扩展.收技能(await 扩展.拉(扩展.raw(g, g.path)), 扩展.页(g, g.path), g.path.split('/').slice(-2, -1)[0] || g.r);
+    }
+    const tree = await 扩展.树(g), 夹 = p => p.replace(/\/?SKILL\.md$/i, '');
+    const sk = tree.filter(x => /(^|\/)SKILL\.md$/i.test(x.path));
+    if (!sk.length) return 扩展.收仓库插件(g, tree, url);
+    const 选 = a.path ? sk.filter(x => 夹(x.path) === a.path.replace(/\/$/, '') || x.path.startsWith(a.path.replace(/\/$/, '') + '/')) : sk;
+    if (!选.length) throw new Error('这里没有 ' + a.path + ' 这个技能');
+    if (选.length > 1) return { 要选: true, 共: 选.length, 技能: 选.slice(0, 300).map(x => 夹(x.path)), 说明: '这里有多个技能: 给 path 学其中一个(一次学一个, 只学用得上的)' };
+    const 目 = 夹(选[0].path), 附 = tree.filter(x => 目 && x.path.startsWith(目 + '/') && x !== 选[0] && 扩展.文本(x)).slice(0, 12);
+    const 附文 = (await Promise.all(附.map(async f => ({ path: f.path.slice(目.length + 1), text: await 扩展.拉(扩展.raw(g, f.path)).catch(() => '') })))).filter(f => f.text);
+    return 扩展.收技能(await 扩展.拉(扩展.raw(g, 选[0].path)), 扩展.页(g, 选[0].path), 目.split('/').pop() || g.r, 附文);
+  },
+  async 装包(p) { // colony-ext/1: 适配好的原样收(不花额度); 只有网址的照网址重学; MCP 重新接
+    p = typeof p === 'string' ? JSON.parse(p) : p;
+    if (!p || !/^colony-ext\//.test(p.format || '')) throw new Error('不是 colony-ext 导出包');
+    const 学到 = [], 错 = [];
+    for (const it of p.items || []) {
+      try {
+        if (!it.adapted && !it.body && !(it.files || []).length) 学到.push(await 扩展.学网址({ url: it.source, path: it.path }));
+        else 学到.push(await 扩展.存(Object.assign({}, it, { id: 扩展.名(it.id || it.name), at: Date.now() })));
+      } catch (e) { 错.push((it.id || it.name) + ': ' + e.message); }
+    }
+    const mcp = [];
+    for (const s of p.mcp || []) {
+      try { mcp.push((await ctx.call('plugin.mcp.connect', { url: s.url, id: s.id })).id); } catch (e) { 错.push('MCP ' + s.id + ': ' + e.message); }
+    }
+    return { 学到: 学到.length, mcp, 错 };
+  },
+  适配说明: '你在把一个外面的 agent 技能或插件改写成 Colony 全能 agent 能照着做的技能。Colony 是浏览器里的一个 html 文件: '
+    + '没有本机终端、没有本机文件系统、不能起进程; 它能做的事全在下面的能力清单里(agent 用 call {path, args} 调)。\n'
+    + '写法: 1 第一行写它干什么、什么时候用。2 一步步写做法, 每步写用哪个能力(清单里的全路径)和关键参数。'
+    + '3 原来要本机终端、读写文件、跑 Python/Node 的: 能换成 js.run(隔离窗里跑 JS, 能 fetch)、browser.fetch(带用户登录代发请求)、'
+    + 'data.set / data.get(存取次元口袋)、ai.*(模型)的就换; 换不了的那步写明「要本机: 交给接了本机 agent 的 bridge.ask」, 不要假装能做。'
+    + '4 只用清单里有的能力, 不编。5 原文里有价值的知识、规则、提示词原样保留。6 先在 <think></think> 里想, 想完在 <skill></skill> 里只写技能正文(markdown, 3000 字内), 正文里不写分析过程。',
+  async 清单() {
+    return (await ctx.call('stem.capabilities')).map(c => c.path + ': ' + String(c.desc || '').split(/[;；。]/)[0].slice(0, 70)).join('\n');
+  },
+  估: n => Math.ceil(n / 2.2),   // 中英混排大约 2.2 字一个 token, 只是估
+  出上限: 12000,   // 实测带参考文件的技能 8000 会写不完
+  技能md(it) { // 导出成标准 SKILL.md: hermes / pi / Claude Code 直接能装; 来源和适配情况写在头里
+    const 正 = it.adapted || it.body || ((it.description || '') + '\n\n还没适配: 原插件在 ' + it.source + ', 拿这个网址学。');
+    return ['---', 'name: ' + it.name, 'description: ' + JSON.stringify(String(it.description || '')), 'source: ' + (it.source || ''),
+      'colony-grade: ' + it.grade, 'colony-adapted: ' + (it.adapted ? 'true' : 'false')]
+      .concat(it.adaptedBy ? ['colony-adapted-by: ' + it.adaptedBy] : []).concat(['---', '', 正]).join('\n');
+  },
+};
+P0('plugin.ext.search', async a => 扩展.搜(a),
+  '在市场里找: 技能 ClawHub、MCP 官方 Registry、插件(npm 的 pi / openclaw / Claude Code, DeepSeek Harness 的 DSH Plugin Hub); 回 ref, 拿它给 plugin.ext.learn {url: ref} 学。只搜不装',
+  { q: 'string', kind: 'string?(skill|mcp|plugin, 不给三家都搜)', ecosystem: 'string?(pi-package|openclaw-plugin|claude-code-plugin|deepseek-harness)', n: 'number?' });
+P0('plugin.ext.learn', async a => {
+  if (a.package) return 扩展.装包(a.package);
+  if (a.text) return 扩展.收技能(a.text, a.source || '贴进来的');
+  if (!a.url) throw new Error('给 url(开源网址)、text(SKILL.md 正文) 或 package(导出包) 之一');
+  return 扩展.学网址(a);
+}, '学一个: url 给市场 ref(clawhub:主/名、npm:包名、mcp:名, 见 plugin.ext.search)、ClawHub/npm 网页、GitHub 仓库/目录/SKILL.md、raw 链接、导出包网址; text 贴 SKILL.md; package 给导出包。只拉文本不花额度; mcp: 的直接接上',
+  { url: 'string?', text: 'string?', package: 'string|object?', path: 'string?', auth: 'string?', source: 'string?' });
+P0('plugin.ext.list', async a => {
+  let l = await 扩展.索取();
+  if (a.kind) l = l.filter(x => x.kind === a.kind);
+  if (a.grade) l = l.filter(x => x.grade === a.grade);
+  if (a.pinned) l = l.filter(x => x.pinned);
+  if (a.q) { const q = String(a.q).toLowerCase(); l = l.filter(x => (x.id + ' ' + x.name + ' ' + x.description).toLowerCase().includes(q)); }
+  l = l.slice().sort((x, y) => (y.pinned - x.pinned) || (y.at - x.at));
+  return { total: l.length, items: l.slice(0, a.n || 30) };
+}, '搜扩展库里学来的技能和插件(默认不进系统提示, 用这个按需找): q 关键词, kind skill|plugin, grade direct|map|adapt, pinned',
+  { q: 'string?', kind: 'string?', grade: 'string?', pinned: 'boolean?', n: 'number?' });
+P0('plugin.ext.read', async a => {
+  const it = await 扩展.取(a.id), 行 = 扩展.行(it);
+  if (a.part === 'original') return Object.assign(行, { original: 扩展.原文(it) });
+  const 用 = it.adapted || (it.grade === 'direct' ? it.body : '');
+  return Object.assign(行, 用 ? { text: 用 } : { text: '', note: '还没适配: 要用先 plugin.ext.adapt {id, estimate:true} 看花多少, 再 adapt; 原文用 part:"original" 看' });
+}, '读一条扩展: 默认给能照着做的正文(适配好的, 或直接能用的原文); part:"original" 给原文/源码', { id: 'string', part: 'string?' });
+P0('plugin.ext.adapt', async a => {
+  const it = await 扩展.取(a.id), 原 = 扩展.原文(it);
+  if (!原) throw new Error(it.id + ' 没有原文(导入时只带了适配版), 要重来就照来源网址重学: ' + it.source);
+  const sys = 扩展.适配说明 + '\n\n能力清单(路径: 说明):\n' + await 扩展.清单();
+  const user = '这是一个' + (it.kind === 'plugin' ? '插件的源码' : '技能') + '「' + it.name + '」, 来源 ' + it.source + ':\n\n' + 原;
+  const 估 = { 入: 扩展.估(sys.length + user.length), 出上限: 扩展.出上限 };
+  if (a.estimate) return { id: it.id, 估计: 估, 说明: '入是估的; 真花多少看回来的 cost' };
+  // 关思考: 要的是改写好的正文, 思考只白占额度。有的模型偶尔只回一两个乱码字: 不像正文就再问一次, 两次都花的额度照实记
+  const 花 = { 入: 0, 出: 0 };
+  let t = '', stop = '';
+  for (let 次 = 0; 次 < 2 && t.length < 200; 次++) {
+    const r = await ctx.call('ai.chat', { messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+      maxTokens: 扩展.出上限, think: 'off', ...a.model && { model: a.model } });
+    const u = r.usage || {};
+    花.入 += u.prompt_tokens ?? u.input_tokens ?? 0;
+    花.出 += u.completion_tokens ?? u.output_tokens ?? 0;
+    const 全 = String(r.content || ''), 包 = /<skill>([\s\S]*?)(<\/skill>|$)/i.exec(全);   // 只要 <skill> 里的: 分析过程不进技能
+    t = (包 ? 包[1] : 全.replace(/<think>[\s\S]*?<\/think>/gi, '')).replace(/^[^\n#\w\u4e00-\u9fff]{1,3}/, '').trim();
+    stop = r.stop || '';
+  }
+  if (t.length < 200) throw new Error('模型两次都没写成(' + t.length + ' 字: ' + t.slice(0, 40) + '), 没存; 花了 ' + 花.入 + '+' + 花.出 + ' token。换个模型: model 参数');
+  Object.assign(it, { adapted: t + (stop === 'length' ? '\n\n…(写到输出上限被截断了)' : ''), adaptedBy: a.model || '默认模型',
+    cost: 花, truncated: stop === 'length', adaptedAt: Date.now() });
+  await 扩展.存(it);
+  return { id: it.id, 字数: t.length, cost: 花, 估计: 估, ...stop === 'length' && { 注意: '写到输出上限被截断了, 可以换个更能写的模型重新适配' } };
+}, '花额度把一条技能或插件改写成用 Colony 能力的做法(插件、要本机的技能用); estimate:true 只估不花; model 可换模型', { id: 'string', estimate: 'boolean?', model: 'string?' });
+P0('plugin.ext.export', async a => {
+  const ids = a.ids || (await 扩展.索取()).map(x => x.id), items = await Promise.all(ids.map(扩展.取));
+  if (a.format === 'skill') {
+    if (items.length !== 1) throw new Error('format:"skill" 一次导一条, 给 ids:[一个 id]');
+    return 扩展.技能md(items[0]);
+  }
+  const mcp = a.mcp === false ? [] : Object.values(await MCP.全()).map(MCP.公开);   // 密钥不导出, 要密钥写着装的那边得自己补哪几样
+  return { format: 'colony-ext/1', at: Date.now(),
+    items: items.map(it => { const o = Object.assign({}, it); if (!a.original) { delete o.files; if (o.adapted) delete o.body; } return o; }), mcp };
+}, '导出: 默认 colony-ext/1 包(含适配好的正文、来源网址、MCP 网址, 不含密钥; 别的 Colony 用 plugin.ext.learn {package} 装, 不花额度); format:"skill" 导一条成标准 SKILL.md(别的 agent 能装)',
+  { ids: 'string[]?', format: 'string?', original: 'boolean?', mcp: 'boolean?' });
+P0('plugin.ext.pin', async a => {
+  const it = await 扩展.取(a.id);
+  it.pinned = a.on !== false;
+  if (it.pinned && (await 扩展.索取()).filter(x => x.pinned && x.id !== it.id).length >= 10) throw new Error('置顶最多 10 条, 先取消一条');
+  await 扩展.存(it);
+  return { id: it.id, pinned: it.pinned };
+}, '置顶/取消置顶一条扩展: 置顶的名字进全能 agent 的系统提示(最多 10 条)', { id: 'string', on: 'boolean?' });
+P0('plugin.ext.remove', async a => { await 扩展.取(a.id); await 扩展.删(a.id); return { removed: a.id }; }, '删一条扩展', { id: 'string' });
+P0('plugin.ext.reindex', async () => ({ 条目: await 扩展.重建索引() }), '扩展库的清单和条目对不上时照条目重建清单', {});
+// ═ 界面 ═
+// 打开插件管理就看到: Colony Bridge 在不在线、接了哪些远程 MCP、从外面学了哪些技能和插件(分级、适配没有、来源网址)。
+// 画在 ctx.root: 界面块打开本块时把它搬进窗。数据一变(学、适配、接 MCP)就重画; 看不见时不画, 下次看见再画
+const 界面 = {
+  脏的: true,
+  开: {},   // 展开了哪几行
+  确: '',   // 适配: 头一下估价, 再点一下才花
+  q: '', 搜到: null,   // 市场搜索词和结果
+  搜到行() {
+    const e = 界面.esc, 段 = (k, 名) => (界面.搜到[k] || []).length ? '<div class="pm-hint" style="margin-top:8px">' + 名 + '</div>' + 界面.搜到[k].map(x =>
+      '<div class="pm-hit"><span class="pm-tag">' + e(x.ecosystem || (k === 'skill' ? (x.downloads || 0) + ' 下载' : k)) + '</span><div class="pm-d"><b>' + e(x.name) + '</b> '
+      + e(x.summary) + (x.能接 ? ' <i>(' + e(x.能接) + ')</i>' : '') + (x.suspicious ? ' <span class="pm-tag bad">市场标了可疑</span>' : '') + '</div>'
+      + (k === 'mcp' && /接不了/.test(x.能接) ? '' : '<button data-act="take" data-id="' + e(x.ref) + '">' + (k === 'mcp' ? '接入' : '学') + '</button>') + '</div>').join('') : '';
+    return 段('skill', '技能 · ClawHub') + 段('mcp', 'MCP · 官方 Registry') + 段('plugin', '插件 · npm') + (界面.搜到.err ? '<p class="pm-msg bad">' + e(界面.搜到.err) + '</p>' : '');
+  },
+  话: '',
+  el: null,
+  esc: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'),
+  样式: '.pm-ui{--m:var(--text-muted,#8a8a8a);--a:var(--accent,#B5FF00);--l:var(--border,rgba(255,255,255,.08));'
+    + 'padding:16px;color:var(--text,#fafafa);font:13px/1.5 var(--sans,-apple-system,"PingFang SC",sans-serif);min-height:200px}'
+    + '.pm-ui h3{font-size:12px;color:var(--m);font-weight:500;margin:18px 0 8px;display:flex;gap:8px;align-items:center}'
+    + '.pm-ui h3 b{color:var(--text,#fafafa)}.pm-hint{font-size:11px;color:var(--m);margin:0 0 8px}'
+    + '.pm-row{border:1px solid var(--l);border-radius:10px;padding:8px 10px;margin:6px 0;background:var(--bg-2,#131313)}'
+    + '.pm-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pm-top .pm-n{font-weight:600;cursor:pointer}'
+    + '.pm-d{color:var(--m);font-size:12px;margin-top:3px}.pm-tag{font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--l);color:var(--m)}'
+    + '.pm-tag.direct,.pm-tag.mcp,.pm-tag.ok{color:var(--a);border-color:var(--a)}.pm-tag.map{color:#5ac8fa;border-color:#5ac8fa}'
+    + '.pm-tag.adapt{color:var(--warn,#FF9500);border-color:var(--warn,#FF9500)}.pm-tag.bad{color:var(--danger,#FF4444);border-color:var(--danger,#FF4444)}'
+    + '.pm-ui button{background:var(--bg,#0a0a0a);color:var(--text,#fafafa);border:1px solid var(--l);border-radius:8px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}'
+    + '.pm-ui button:hover{border-color:var(--a)}.pm-ui button.pm-pri{color:var(--a);border-color:var(--a)}.pm-ui button:disabled{opacity:.5;cursor:wait}'
+    + '.pm-in{display:flex;gap:6px;margin:6px 0}.pm-in input,.pm-in textarea{flex:1;background:var(--bg,#0a0a0a);color:inherit;border:1px solid var(--l);'
+    + 'border-radius:8px;padding:6px 10px;font:inherit;font-size:12px}.pm-in textarea{min-height:60px;font-family:var(--mono,monospace)}'
+    + '.pm-sp{flex:1}.pm-ui a{color:var(--m);font-size:11px;word-break:break-all}.pm-pre{white-space:pre-wrap;font:11px/1.5 var(--mono,monospace);'
+    + 'color:var(--m);max-height:260px;overflow:auto;margin-top:6px;border-top:1px solid var(--l);padding-top:6px}'
+    + '.pm-msg{font-size:12px;color:var(--a);min-height:18px;margin:4px 0}.pm-msg.bad{color:var(--danger,#FF4444)}'
+    + '.pm-ui select{background:var(--bg,#0a0a0a);color:inherit;border:1px solid var(--l);border-radius:8px;padding:4px 6px;font:inherit;font-size:12px}'
+    + '.pm-hit{display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--l);font-size:12px}.pm-hit .pm-d{flex:1;margin:0}',
+  看得见: () => !!(ctx.root && ctx.root.isConnected && ctx.root.offsetParent !== null
+    && ctx.root.parentNode && ctx.root.parentNode.id !== 'colony-root'),
+  脏() { 界面.脏的 = true; if (界面.看得见()) 界面.画(); },
+  说(t, 坏) { 界面.话 = (坏 ? '!' : '') + t; const m = ctx.root && ctx.root.querySelector('.pm-msg'); if (m) { m.textContent = t; m.className = 'pm-msg' + (坏 ? ' bad' : ''); } },
+  async 画() {
+    if (!ctx.root) return;
+    界面.脏的 = false;
+    const e = 界面.esc;
+    const [ping, ms, idx] = await Promise.all([
+      ctx.call('plugin.ping').catch(() => ({ alive: false })),
+      MCP.全().catch(() => ({})),
+      扩展.索取().catch(() => []),
+    ]);
+    const 档名 = { direct: '直接用', map: '换名可用', adapt: '要花额度适配', mcp: '套了远程 MCP, 已接上' };
+    const 扩行 = x => {
+      const 能用 = x.adapted || x.grade === 'direct', 开 = 界面.开['x:' + x.id];
+      return '<div class="pm-row"><div class="pm-top">'
+        + '<span class="pm-n" data-act="open" data-id="' + e(x.id) + '">' + (开 ? '▾ ' : '▸ ') + e(x.name) + '</span>'
+        + '<span class="pm-tag">' + (x.kind === 'plugin' ? '插件' : '技能') + '</span>'
+        + '<span class="pm-tag ' + e(x.grade) + '">' + e(档名[x.grade] || x.grade) + '</span>'
+        + (能用 ? '<span class="pm-tag ok">' + (x.adapted ? '已适配' + (x.adaptedBy ? ' · ' + e(x.adaptedBy) : '') : '能用') + '</span>' : '<span class="pm-tag bad">还不能用</span>')
+        + (x.pinned ? '<span class="pm-tag ok">置顶</span>' : '')
+        + (x.cost && x.cost.入 != null ? '<span class="pm-tag">花了 ' + x.cost.入 + '+' + x.cost.出 + ' tok</span>' : '')
+        + '<i class="pm-sp"></i>'
+        + (x.grade === 'direct' || x.grade === 'mcp' ? '' : !x.origChars   // 装包来的只有适配版: 要重做得先照来源网址把原文拉回来
+          ? (/^https?:/.test(x.source) ? '<button data-act="relearn" data-id="' + e(x.id) + '" title="导入时只带了适配版; 照来源网址把原文拉回来(不花额度), 之后才能重新适配">照网址重学</button>' : '')
+          : '<button data-act="adapt" data-id="' + e(x.id) + '"' + (界面.确 === x.id ? ' class="pm-pri"' : '') + '>'
+            + (界面.确 === x.id ? '确认花额度' : x.adapted ? '重新适配' : '适配') + '</button>')
+        + '<button data-act="pin" data-id="' + e(x.id) + '">' + (x.pinned ? '取消置顶' : '置顶') + '</button>'
+        + '<button data-act="md" data-id="' + e(x.id) + '" title="导出成标准 SKILL.md, 别的 agent 能装">SKILL.md</button>'
+        + '<button data-act="del" data-id="' + e(x.id) + '">删</button></div>'
+        + (x.description ? '<div class="pm-d">' + e(x.description) + '</div>' : '')
+        + '<div class="pm-d">来源 <a href="' + e(x.source) + '" target="_blank" rel="noopener">' + e(x.source) + '</a> · 原文 ' + x.origChars + ' 字</div>'
+        + (开 ? '<div class="pm-pre" data-pre="' + e(x.id) + '">读取中…</div>' : '') + '</div>';
+    };
+    const mcp行 = s => '<div class="pm-row"><div class="pm-top"><span class="pm-n" data-act="mopen" data-id="' + e(s.id) + '">'
+      + (界面.开['m:' + s.id] ? '▾ ' : '▸ ') + e(s.id) + '</span><span class="pm-tag">' + (s.tools || []).length + ' 个工具</span>'
+      + (s.serverInfo ? '<span class="pm-tag">' + e(s.serverInfo.name + ' ' + (s.serverInfo.version || '')) + '</span>' : '')
+      + '<i class="pm-sp"></i><button data-act="mdel" data-id="' + e(s.id) + '">移除</button></div>'
+      + '<div class="pm-d"><a href="' + e(s.url) + '" target="_blank" rel="noopener">' + e(s.url) + '</a></div>'
+      + (界面.开['m:' + s.id] ? '<div class="pm-pre">' + (s.tools || []).map(t => '• ' + e(t.name) + ' — ' + e(String(t.description || '').split('\n')[0].slice(0, 120))).join('\n') + '</div>' : '')
+      + '</div>';
+    const 技 = idx.filter(x => x.kind !== 'plugin'), 插 = idx.filter(x => x.kind === 'plugin'), ss = Object.values(ms);
+    const 排 = l => l.slice().sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at));
+    ctx.root.innerHTML = '<div class="pm-ui"><style>' + 界面.样式 + '</style>'
+      + '<div class="pm-top"><b>Colony Bridge</b>' + (ping.alive ? '<span class="pm-tag ok">在线 ' + e(ping.version || '') + '</span>' : '<span class="pm-tag bad">不在线</span>')
+      + '<i class="pm-sp"></i><span class="pm-tag">MCP ' + ss.length + '</span><span class="pm-tag">技能 ' + 技.length + '</span><span class="pm-tag">插件 ' + 插.length + '</span>'
+      + '<button data-act="export" title="导出全部: 适配好的正文 + 来源网址 + MCP 网址(不含密钥), 别的 Colony 装上不花额度">导出包</button></div>'
+      + '<div class="pm-msg' + (界面.话[0] === '!' ? ' bad' : '') + '">' + e(界面.话.replace(/^!/, '')) + '</div>'
+      + '<h3>市场</h3><p class="pm-hint">技能 ClawHub · MCP 官方 Registry · 插件 npm(pi / openclaw / Claude Code) + DSH Plugin Hub(DeepSeek Harness)。搜到挑一个学, 只拉文本不花额度; 插件和带脚本的技能学完点「适配」才花。</p>'
+      + '<div class="pm-in"><input data-f="q" placeholder="搜: pdf、memory、web search…" value="' + e(界面.q || '') + '"><select data-f="kind"><option value="">三家</option><option value="skill">技能</option><option value="mcp">MCP</option><option value="plugin">插件</option><option value="dsh">DeepSeek 插件</option></select><button class="pm-pri" data-act="search">搜</button></div>'
+      + (界面.搜到 ? 界面.搜到行() : '')
+      + '<p class="pm-hint">或给网址: GitHub 仓库 / 技能目录 / SKILL.md / ClawHub、npm 网页 / 导出包</p>'
+      + '<div class="pm-in"><input data-f="url" placeholder="https://github.com/…"><button data-act="learn">学</button></div>'
+      + '<details><summary class="pm-hint" style="cursor:pointer">或者贴 SKILL.md 正文 / 导出包 JSON</summary>'
+      + '<div class="pm-in"><textarea data-f="text"></textarea><button data-act="paste">学</button></div></details>'
+      + '<h3><b>远程 MCP</b> · ' + ss.length + '</h3>'
+      + '<div class="pm-in"><input data-f="murl" placeholder="MCP 网址 https://…/mcp, 或整段 mcp.json"><input data-f="mauth" placeholder="token(可空)" style="flex:0 0 120px"><button data-act="mcp">接入</button></div>'
+      + (ss.map(mcp行).join('') || '<p class="pm-hint">还没接</p>')
+      + '<h3><b>技能</b> · ' + 技.length + '<span class="pm-hint" style="margin:0">默认不进 agent 的系统提示, 它用 plugin.ext.list 按需搜; 置顶的(最多 10)才列名字</span></h3>'
+      + (排(技).map(扩行).join('') || '<p class="pm-hint">还没学</p>')
+      + '<h3><b>插件</b> · ' + 插.length + '</h3>' + (排(插).map(扩行).join('') || '<p class="pm-hint">还没学</p>')
+      + '</div>';
+    for (const p of ctx.root.querySelectorAll('[data-pre]'))
+      ctx.call('plugin.ext.read', { id: p.dataset.pre }).then(r => { p.textContent = r.text || r.note; }, er => { p.textContent = er.message; });
+  },
+  下载(名, 文) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([文], { type: 'text/plain' }));
+    a.download = 名;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  },
+  async 点(ev) {
+    const b = ev.target.closest('[data-act]');
+    if (!b || !ctx.root.contains(b)) return;
+    const act = b.dataset.act, id = b.dataset.id, 值 = f => (ctx.root.querySelector('[data-f="' + f + '"]') || {}).value || '';
+    if (act !== 'adapt') 界面.确 = '';
+    const 忙 = async (话, fn) => {
+      b.disabled = true; 界面.说(话);
+      try { const r = await fn(); if (r !== undefined) 界面.说(r); } catch (e) { 界面.说(e.message, true); }
+      b.disabled = false; 界面.画();
+    };
+    if (act === 'open' || act === 'mopen') { const k = (act === 'open' ? 'x:' : 'm:') + id; 界面.开[k] = !界面.开[k]; return 界面.画(); }
+    if (act === 'search') return 忙('搜市场…', async () => {
+      界面.q = 值('q').trim();
+      if (!界面.q) throw new Error('先填要搜的词');
+      const k = 值('kind');
+      界面.搜到 = await ctx.call('plugin.ext.search', { q: 界面.q, kind: k === 'dsh' ? 'plugin' : k || undefined, ...k === 'dsh' && { ecosystem: 'deepseek-harness' }, n: 6 });
+      const n = ['skill', 'mcp', 'plugin'].reduce((s, k) => s + (Array.isArray(界面.搜到[k]) ? 界面.搜到[k].length : 0), 0);
+      return '搜到 ' + n + ' 个; 挑用得上的点「学」';
+    });
+    if (act === 'take') return 忙('学 ' + id + '…', async () => {
+      const r = await ctx.call('plugin.ext.learn', { url: id });
+      if (r.tools) return '接上 MCP ' + r.id + ': ' + r.tools.length + ' 个工具';
+      if (r.grade === 'mcp') return '「' + r.name + '」只是套了一个远程 MCP: ' + (r.connected || '');
+      if (r.要选) return '包里有 ' + r.共 + ' 个技能, 去它的 GitHub 目录学其中一个';
+      return '学到「' + r.name + '」: ' + r.grade + (r.grade === 'adapt' ? ', 点「适配」才能用' : '');
+    });
+    if (act === 'learn' || act === 'paste') return 忙('学习中…', async () => {
+      const 文 = act === 'learn' ? 值('url').trim() : 值('text').trim();
+      if (!文) throw new Error('先填网址或贴正文');
+      const r = act === 'learn' ? await ctx.call('plugin.ext.learn', { url: 文 })
+        : /^\s*\{/.test(文) ? await ctx.call('plugin.ext.learn', { package: 文 }) : await ctx.call('plugin.ext.learn', { text: 文 });
+      if (r.要选) {
+        if (!confirm('这里有 ' + r.共 + ' 个技能(只拉文本不花额度), 全学?\n\n' + r.技能.slice(0, 30).join('\n') + (r.共 > 30 ? '\n…' : ''))) return '没学: 要学其中一个就把网址写到那个技能目录';
+        const all = await ctx.call('plugin.ext.learn', { url: 文, all: true });
+        return '学到 ' + all.学到 + ' 个: ' + Object.entries(all.分级).map(([k, n]) => k + ' ' + n).join(', ');
+      }
+      if (r.学到 !== undefined) return '学到 ' + r.学到 + (r.分级 ? ': ' + Object.entries(r.分级).map(([k, n]) => k + ' ' + n).join(', ') : '') + (r.mcp && r.mcp.length ? ', 接上 MCP ' + r.mcp.join(', ') : '') + (r.错 && r.错.length ? '; 错: ' + r.错.join('; ') : '');
+      return '学到「' + r.name + '」: ' + r.grade + (r.grade === 'adapt' ? ', 点「适配」才能用' : '');
+    });
+    if (act === 'adapt') {
+      if (界面.确 !== id) return 忙('估算中…', async () => {
+        const r = await ctx.call('plugin.ext.adapt', { id, estimate: true });
+        界面.确 = id;
+        return '「' + id + '」适配约 ' + r.估计.入 + ' token 入、最多 ' + r.估计.出上限 + ' 出; 再点「确认花额度」才开始';
+      });
+      界面.确 = '';
+      return 忙('适配中, 模型在改写…', async () => {
+        const r = await ctx.call('plugin.ext.adapt', { id });
+        return '适配好了: ' + r.字数 + ' 字, 花了 ' + (r.cost.入 ?? '?') + '+' + (r.cost.出 ?? '?') + ' token';
+      });
+    }
+    if (act === 'relearn') return 忙('照来源网址重学…', async () => {
+      const it = await 扩展.取(id), r = await ctx.call('plugin.ext.learn', { url: it.source });
+      return '拉回原文: 「' + (r.name || id) + '」' + r.grade + ', 原来的适配版换掉了' + (r.grade === 'adapt' ? ', 要用再点「适配」' : '');
+    });
+    if (act === 'pin') return 忙('', async () => { const r = await ctx.call('plugin.ext.pin', { id, on: !(await 扩展.取(id)).pinned }); return r.pinned ? '已置顶: 名字进 agent 的系统提示' : '已取消置顶'; });
+    if (act === 'del') { if (!confirm('删掉「' + id + '」?')) return; return 忙('', async () => { await ctx.call('plugin.ext.remove', { id }); return '删了 ' + id; }); }
+    if (act === 'md') return 忙('', async () => { 界面.下载(id + '.SKILL.md', await ctx.call('plugin.ext.export', { ids: [id], format: 'skill' })); return '导出了 ' + id + '.SKILL.md'; });
+    if (act === 'export') return 忙('', async () => {
+      const p = await ctx.call('plugin.ext.export', {});
+      界面.下载('colony-ext-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(p, null, 1));
+      return '导出了 ' + p.items.length + ' 条扩展、' + p.mcp.length + ' 个 MCP; 别的 Colony 在这里贴进去或 plugin.ext.learn {package} 就装上';
+    });
+    if (act === 'mcp') return 忙('接入中…', async () => {
+      const v = 值('murl').trim(), auth = 值('mauth').trim() || undefined;
+      if (!v) throw new Error('先填 MCP 网址');
+      const r = await ctx.call('plugin.mcp.connect', /^\s*\{/.test(v) ? { config: v, auth } : { url: v, auth });
+      return '接上 ' + r.id + ': ' + r.tools.length + ' 个工具';
+    });
+    if (act === 'mdel') { if (!confirm('移除 MCP「' + id + '」?')) return; return 忙('', async () => { await ctx.call('plugin.mcp.remove', { id }); return '移除了 ' + id; }); }
+  },
+};
+if (ctx.root) {
+  ctx.root.addEventListener('click', 界面.点);
+  // 界面块把 ctx.root 搬进窗、窗重新露出来时补画; 不在页面上(单独跑、测试)就不画
+  const 看 = new IntersectionObserver(es => { if (es.some(x => x.isIntersecting) && 界面.脏的) 界面.画(); });
+  看.observe(ctx.root);
+  // 先同步画个壳: 界面块在本块重启那一刻量 root 高度, 是 0 就当没界面、换成卡片
+  ctx.root.innerHTML = '<div class="pm-ui"><style>' + 界面.样式 + '</style><p class="pm-hint">载入中…</p></div>';
+  界面.画().catch(e => { ctx.root.textContent = '插件管理界面没画出来: ' + e.message; });
+}
+// ↦ 借 stem 的 跑块
+// ↦ 借 stem 的 键值库
 // ═ 装配 ═
 const P = (path, fn, desc, schema) => ctx.provide(path, fn, { desc, schema: schema || {}, frames: false });
 P('plugin.ping', async () => {
@@ -18417,18 +19478,22 @@ P('plugin.reload', async () => {
 }, '让插件重新加载源码, 并等它重新上线(回 alive/build)');
 P('browser.tabs', async a => (await 浏览器({ method: 'tabs.query', args: [a && a.query || {}] })).map(t => ({ tabId: t.id, windowId: t.windowId, active: t.active, title: t.title, url: t.url })),
   '列标签页: 回 [{tabId, active, title, url}]', { query: 'object?(chrome.tabs.query 的条件)' });
-P('browser.cdp', a => 浏览器({ tabId: a.tabId, targetId: a.targetId, method: a.method, args: a.args, params: a.params, calls: a.calls, timeout: a.timeout, listen: a.listen }, (a.timeout || 15000) + 5000),
-  '通用: CDP 原名命令(或 calls 批量); 调试器常驻(闲 30 秒才卸), 所以模拟/注入/开着的域会一直生效。listen 给事件前缀(如 ["Network.","Fetch.requestPaused"], true=全部, false=停)开始收集事件, 用 browser.events 拉',
-  { tabId: 'number?(不给=活动页)', targetId: 'string?', method: 'string?', params: 'object?', args: 'array?(tabs.* 用)', calls: 'array?([{method, params}])', listen: 'array|boolean?', timeout: 'number?' });
+P('browser.cdp', a => {
+  const go = () => 浏览器({ tabId: a.tabId, targetId: a.targetId, method: a.method, args: a.args, params: a.params, calls: a.calls, timeout: a.timeout, listen: a.listen }, (a.timeout || 15000) + 5000);
+  const 截图 = [a.method, ...(a.calls || []).map(c => c.method)].includes('Page.captureScreenshot');
+  return 截图 && a.tabId && !a.targetId ? 前台(a.tabId, a.stay, go) : go();   // 截图的后台页先切到前台, 不然一直等到超时
+},
+  '通用: CDP 原名命令(或 calls 批量); 带 Page.captureScreenshot 的后台页会先切到前台(stay:true 不切回); 调试器常驻(闲 30 秒才卸), 所以模拟/注入/开着的域会一直生效。listen 给事件前缀(如 ["Network.","Fetch.requestPaused"], true=全部, false=停)开始收集事件, 用 browser.events 拉',
+  { tabId: 'number?(不给=活动页)', targetId: 'string?', method: 'string?', params: 'object?', args: 'array?(tabs.* 用)', calls: 'array?([{method, params}])', listen: 'array|boolean?', timeout: 'number?', stay: 'boolean?' });
 P('browser.fetch', async a => {
-  const r = await 发('fetch', { req: { url: a.url, method: a.method || 'GET', headers: a.headers || {}, body: a.body === undefined ? undefined : (typeof a.body === 'string' ? a.body : JSON.stringify(a.body)), binary: !!a.binary, timeout: a.timeout || 30000 } }, (a.timeout || 30000) + 5000);
+  const r = await 发('fetch', { req: { url: a.url, method: a.method || 'GET', headers: a.headers || {}, body: a.bodyB64 || a.body === undefined ? undefined : (typeof a.body === 'string' ? a.body : JSON.stringify(a.body)), bodyB64: a.bodyB64 || undefined, binary: !!a.binary, timeout: a.timeout || 30000 } }, (a.timeout || 30000) + 5000);
   if (r.error) throw new Error(r.error);
   const out = { status: r.status, contentType: r.contentType, headers: r.headers };
   if (r.base64 !== undefined) { out.base64 = r.base64; out.bytes = r.bytes; }
   else if (a.json || /json/.test(r.contentType || '')) { try { out.json = JSON.parse(r.text); } catch (e) { out.text = r.text; } }
   else out.text = r.text;
   return out;
-}, '插件代发 HTTP(S) 请求: 带用户浏览器的 IP 和登录 cookie, 不受跨域限制; JSON 自动解析成 json, binary:true 回 base64; 回 {status, contentType, json|text|base64}', { url: 'string', method: 'string?', headers: 'object?', body: 'string|object?', binary: 'boolean?', json: 'boolean?', timeout: 'number?' });
+}, '插件代发 HTTP(S) 请求: 带用户浏览器的 IP 和登录 cookie, 不受跨域限制; JSON 自动解析成 json, binary:true 回 base64; 二进制请求体(zip、图片、multipart 带文件)给 bodyB64(base64, 插件还原成字节再发); 回 {status, contentType, json|text|base64}', { url: 'string', method: 'string?', headers: 'object?', body: 'string|object?', bodyB64: 'string?(二进制请求体的 base64, 给了就不看 body)', binary: 'boolean?', json: 'boolean?', timeout: 'number?' });
 P('browser.recStart', async a => { const r = await 发('recStart', { tabId: a.tabId, fps: a.fps, maxWidth: a.maxWidth, quality: a.quality, bps: a.bps }, 20000); if (r.error) throw new Error(r.error); delete r.id; return r; },
   '免点录屏: 插件后台录 Colony 这一页(不弹框、不占通道, 边录边操作不卡); 页要在前台, 没声音; 停用 browser.recStop',
   { fps: 'number?(默认 15)', maxWidth: 'number?(默认原尺寸)', quality: 'number?(JPEG 1-100, 默认 92)', bps: 'number?(码率, 默认 12e6)', tabId: 'number?' });
@@ -18462,25 +19527,40 @@ P('browser.click', a => 跑(a.tabId, '(()=>{const e=document.querySelector(' + J
   '按选择器点一个元素', { tabId: 'number?', selector: 'string' });
 P('browser.type', a => 跑(a.tabId, '(()=>{const e=document.querySelector(' + JSON.stringify(a.selector) + ');if(!e)throw new Error("找不到 "+' + JSON.stringify(a.selector) + ');e.focus();const p=Object.getPrototypeOf(e),d=Object.getOwnPropertyDescriptor(p,"value");if(d&&d.set)d.set.call(e,' + JSON.stringify(String(a.text)) + ');else e.textContent=' + JSON.stringify(String(a.text)) + ';e.dispatchEvent(new Event("input",{bubbles:true}));e.dispatchEvent(new Event("change",{bubbles:true}));' + (a.enter ? 'e.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",keyCode:13,bubbles:true}));e.form&&e.form.requestSubmit&&e.form.requestSubmit();' : '') + 'return true})()'),
   '按选择器往输入框里填字(enter:true 再回车)', { tabId: 'number?', selector: 'string', text: 'string', enter: 'boolean?' });
+// 截图都走 截: 后台标签页不渲染, 调试截图会一直等到超时 → 先切到前台, 截完切回(stay:true 不切回);
+// 调试截图还是超时(页被别的调试会话占着之类) → 改截窗口看得见的那块(tabs.captureVisibleTab), 有 clip 就按标签页宽度换算裁出来
+const 前台 = async (tabId, stay, fn) => {
+  const all = await 浏览器({ method: 'tabs.query', args: [{}] });
+  const me = tabId ? all.find(t => t.id === tabId) : (await 浏览器({ method: 'tabs.query', args: [{ active: true, lastFocusedWindow: true }] }))[0];   // 不给 = 活动页, 和别的 browser.* 一样
+  if (!me) throw new Error('没有 tabId=' + tabId + ' 的标签页');
+  const back = !me.active && all.find(t => t.active && t.windowId === me.windowId);
+  if (back) { await 浏览器({ method: 'tabs.update', args: [me.id, { active: true }] }); await new Promise(r => setTimeout(r, 600)); }
+  try { return await fn(me, !!back); }
+  finally { if (back && stay !== true) await 浏览器({ method: 'tabs.update', args: [back.id, { active: true }] }).catch(() => { }); }
+};
+const 裁 = (b64, fmt, c, tabW) => new Promise((ok, no) => {
+  const i = new Image();
+  i.onload = () => {
+    const k = i.naturalWidth / tabW, cv = document.createElement('canvas');
+    cv.width = Math.round(c.width * k); cv.height = Math.round(c.height * k);
+    cv.getContext('2d').drawImage(i, c.x * k, c.y * k, cv.width, cv.height, 0, 0, cv.width, cv.height);
+    ok(cv.toDataURL('image/' + fmt, 0.85).split(',')[1]);
+  };
+  i.onerror = () => no(new Error('截图解不开'));
+  i.src = 'data:image/' + fmt + ';base64,' + b64;
+});
+const 截 = async (me, params) => {
+  try { return (await 浏览器({ tabId: me.id, method: 'Page.captureScreenshot', params, timeout: 6000 }, 9000)).data; }
+  catch (e) { if (!/超时|timeout/i.test(e.message)) throw e; }
+  const fmt = params.format === 'jpeg' ? 'jpeg' : 'png';
+  const url = (await 发('ext', { req: { method: 'tabs.captureVisibleTab', args: [me.windowId, { format: fmt, ...fmt === 'jpeg' && { quality: params.quality || 80 } }] } }, 15000)).result;
+  const data = String(url).split(',')[1];
+  return params.clip ? 裁(data, fmt, params.clip, me.width) : data;
+};
 P('browser.screenshot', async a => {
   a = a || {};
-  const fmt = a.format || 'png', params = { format: fmt };
-  if (fmt === 'jpeg') params.quality = a.quality || 80;
-  const shot = () => 浏览器({ tabId: a.tabId, method: 'Page.captureScreenshot', params, timeout: 8000 }, 12000);
-  let back = null, r;
-  if (a.tabId) {   // 后台页不渲染, 截不了: 先切到前台, 截完切回原来那页
-    const all = await 浏览器({ method: 'tabs.query', args: [{}] });
-    const me = all.find(t => t.id === a.tabId);
-    if (!me) throw new Error('没有 tabId=' + a.tabId + ' 的标签页');
-    if (!me.active) {
-      back = all.find(t => t.active && t.windowId === me.windowId);
-      await 浏览器({ method: 'tabs.update', args: [a.tabId, { active: true }] });
-      await new Promise(res => setTimeout(res, 600));
-    }
-  }
-  try { r = await shot(); }
-  finally { if (back && a.stay !== true) await 浏览器({ method: 'tabs.update', args: [back.id, { active: true }] }).catch(() => {}); }
-  return { mimeType: 'image/' + fmt, data: r.data, switched: !!back };
+  const fmt = a.format || 'png', params = { format: fmt, ...fmt === 'jpeg' && { quality: a.quality || 80 } };
+  return 前台(a.tabId, a.stay, async (me, switched) => ({ mimeType: 'image/' + fmt, data: await 截(me, params), switched }));
 }, '截标签页的图: 回 {mimeType, data(base64)}; 后台页会临时切到前台截完再切回(stay:true 不切回)', { tabId: 'number?', format: 'string?(png|jpeg)', quality: 'number?', stay: 'boolean?' });
 // ── 桌面「浏览器」应用里嵌着的页: 每个标签是一个 name=ccb-* 的 iframe, 在 Chrome 里是单独的调试目标(type other)。
 // 调试目标列表里没有 iframe 名字, 所以按网址对: 应用报的 url 和目标 url 一致的那个; 同网址多个时再在页里问 window.name。
@@ -18635,11 +19715,9 @@ P('browser.frameShot', async a => {
     try { const r = await 浏览器({ tabId: t.id, method: 'Runtime.evaluate', params: { returnByValue: true, expression: find } }); if (r.result && r.result.value) { host = t; f = r.result.value; break; } } catch (e) { }
   }
   if (!f) throw new Error('浏览器应用的网页区不在画面上(窗最小化了, 或当前是空标签页)');
-  if (!host.active) { await 浏览器({ method: 'tabs.update', args: [host.id, { active: true }] }); await new Promise(r => setTimeout(r, 500)); }
-  const fmt = a.format || 'jpeg', params = { format: fmt, clip: { x: f.x, y: f.y, width: f.w, height: f.h, scale: 1 }, captureBeyondViewport: false };
-  if (fmt === 'jpeg') params.quality = a.quality || 80;
-  const shot = await 浏览器({ tabId: host.id, method: 'Page.captureScreenshot', params, timeout: 8000 }, 12000);
-  return { mimeType: 'image/' + fmt, data: shot.data, tab: cur.id, title: cur.title, url: cur.url };
+  const fmt = a.format || 'jpeg', params = { format: fmt, clip: { x: f.x, y: f.y, width: f.w, height: f.h, scale: 1 }, captureBeyondViewport: false, ...fmt === 'jpeg' && { quality: a.quality || 80 } };
+  const data = await 前台(host.id, true, me => 截(me, params));
+  return { mimeType: 'image/' + fmt, data, tab: cur.id, title: cur.title, url: cur.url };
 }, '截「浏览器」里一页在屏幕上的样子(不给 tab = 当前; 给了会先切过去): 回 {mimeType, data}', { tab: 'number?', format: 'string?(jpeg|png)', quality: 'number?' });
 // ✂ 运行窗
 // 作品运行窗: 小应用(竞技、评审、测试类)要跑一段别人写的 HTML 并看它、点它时用。经插件开一个单独的浏览器窗口(独立进程):

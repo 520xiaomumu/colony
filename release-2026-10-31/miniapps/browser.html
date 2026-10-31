@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>浏览器</title>
+<meta name="description" content="在 Colony 里上网: 多标签、地址栏(网址或搜索)、前进后退刷新、书签、历史; 自动继承本浏览器的登录(要装 Colony Bridge 插件, 并在窗上开「完全访问」)。agent 用 browser.frame* 操控里面的页。">
+<style>
+:root{color-scheme:dark;--bg:#1c1c1e;--bar:#2c2c2e;--tab:#3a3a3c;--fg:#f2f2f7;--dim:#98989d;--acc:#0a84ff;--bd:rgba(255,255,255,.08)}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100%}
+#tabs{display:flex;align-items:flex-end;gap:2px;padding:6px 8px 0;background:var(--bg);overflow-x:auto;scrollbar-width:none;flex:none}
+#tabs::-webkit-scrollbar{display:none}
+.tab{display:flex;align-items:center;gap:6px;min-width:60px;max-width:220px;flex:1 1 180px;height:32px;padding:0 8px 0 10px;border-radius:8px 8px 0 0;background:transparent;color:var(--dim);cursor:default;user-select:none;position:relative}
+.tab:hover{background:rgba(255,255,255,.05)}
+.tab.on{background:var(--bar);color:var(--fg)}
+.tab img{width:16px;height:16px;flex:none;border-radius:3px}
+.tab .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab .x{flex:none;width:18px;height:18px;border-radius:4px;display:grid;place-items:center;opacity:.6;font-size:14px;line-height:1}
+.tab .x:hover{background:rgba(255,255,255,.15);opacity:1}
+.tab.load .t::before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;border:2px solid var(--acc);border-right-color:transparent;animation:sp .7s linear infinite;vertical-align:-1px}
+@keyframes sp{to{transform:rotate(360deg)}}
+#newtab{flex:none;width:28px;height:28px;margin:0 0 2px 2px;border:0;border-radius:6px;background:transparent;color:var(--dim);font-size:18px;cursor:pointer}
+#newtab:hover{background:rgba(255,255,255,.08);color:var(--fg)}
+#bar{display:flex;align-items:center;gap:4px;padding:6px 8px;background:var(--bar);border-bottom:1px solid var(--bd);flex:none}
+#bar button{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:var(--fg);font-size:16px;cursor:pointer;flex:none}
+#bar button:hover:not(:disabled){background:rgba(255,255,255,.08)}
+#bar button:disabled{opacity:.3;cursor:default}
+#bar button.on{color:#ffd60a}
+#url{flex:1;height:32px;padding:0 12px;border:1px solid transparent;border-radius:16px;background:var(--bg);color:var(--fg);font:inherit;outline:none}
+#url:focus{border-color:var(--acc)}
+#bm{display:flex;gap:2px;padding:4px 8px;background:var(--bar);border-bottom:1px solid var(--bd);overflow-x:auto;scrollbar-width:none;flex:none}
+#bm:empty{display:none}
+#bm a{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;color:var(--fg);text-decoration:none;white-space:nowrap;max-width:160px;cursor:pointer}
+#bm a:hover{background:rgba(255,255,255,.08)}
+#bm a img{width:14px;height:14px}
+#bm a span{overflow:hidden;text-overflow:ellipsis}
+#view{flex:1;position:relative;background:#fff}
+#view iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:none}
+#view iframe.on{display:block}
+.home{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;padding-top:12vh;background:var(--bg);overflow:auto}
+.home.on{display:flex}
+.home h1{font-size:28px;font-weight:600;margin:0 0 24px}
+.home input{width:min(560px,86%);height:44px;padding:0 20px;border-radius:22px;border:1px solid var(--bd);background:var(--bar);color:var(--fg);font:15px inherit;outline:none}
+.home input:focus{border-color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,96px);gap:12px;width:min(640px,90%);justify-content:center;margin-top:32px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 4px;border-radius:12px;cursor:pointer;text-align:center;color:var(--fg)}
+.tile:hover{background:rgba(255,255,255,.06)}
+.tile img{width:36px;height:36px;border-radius:8px;background:var(--bar);padding:4px}
+.tile span{font-size:12px;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sec{width:min(640px,90%);margin-top:32px;color:var(--dim);font-size:12px}
+.hist{width:min(640px,90%);margin-top:8px}
+.hist div{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer}
+.hist div:hover{background:rgba(255,255,255,.06)}
+.hist img{width:14px;height:14px;flex:none}
+.hist .ti{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist .u{color:var(--dim);max-width:40%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pop{position:absolute;inset:0;display:none;background:rgba(0,0,0,.45);z-index:5;align-items:center;justify-content:center}
+#pop.on{display:flex}
+#pop .box{width:min(560px,92%);height:min(720px,90%);display:flex;flex-direction:column;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+#pop .hd{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bar);color:var(--fg);font-size:12px}
+#pop .hd span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+#pop .hd button{border:0;background:transparent;color:var(--fg);font-size:16px;cursor:pointer;width:24px;height:24px;border-radius:4px}
+#pop .hd button:hover{background:rgba(255,255,255,.1)}
+#pop iframe{flex:1;width:100%;border:0;display:block!important;position:static!important}
+#warn{display:none;padding:6px 12px;background:#3a2a00;color:#ffd60a;font-size:12px;flex:none}
+#warn.on{display:block}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="tabs"><button id="newtab" title="新标签 (Ctrl+T)">+</button></div>
+  <div id="bar">
+    <button id="back" title="后退">←</button>
+    <button id="fwd" title="前进">→</button>
+    <button id="rel" title="刷新">↻</button>
+    <button id="home" title="主页">⌂</button>
+    <input id="url" placeholder="输入网址或搜索" spellcheck="false" autocomplete="off">
+    <button id="star" title="加书签">☆</button>
+    <button id="ext" title="在浏览器新标签页打开">↗</button>
+  </div>
+  <div id="bm"></div>
+  <div id="warn"></div>
+  <div id="view"><div id="pop"><div class="box"><div class="hd"><span id="popurl"></span><button id="popext" title="在浏览器里打开">↗</button><button id="popx" title="关闭">×</button></div></div></div></div>
+</div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const SEARCH = 'https://www.google.com/search?q=';
+const DEFAULT_BM = [
+  { url: 'https://www.google.com/', title: 'Google' },
+  { url: 'https://github.com/', title: 'GitHub' },
+  { url: 'https://www.youtube.com/', title: 'YouTube' },
+  { url: 'https://www.bilibili.com/', title: '哔哩哔哩' },
+  { url: 'https://gemini.google.com/app', title: 'Gemini' },
+  { url: 'https://grok.com/', title: 'Grok' }
+];
+const S = { tabs: [], cur: null, bm: [], hist: [], seq: 0 };
+const fav = u => { try { return 'https://www.google.com/s2/favicons?sz=32&domain=' + new URL(u).hostname; } catch (e) { return ''; } };
+const store = {
+  async get(k, d) { try { const r = await colony.store.get({ key: k }); const v = r && r.value !== undefined ? r.value : r; return v == null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { colony.store.set({ key: k, value: v }); } catch (e) { } }
+};
+let saveT = 0;
+const save = () => { clearTimeout(saveT); saveT = setTimeout(() => {
+  store.set('session', { tabs: S.tabs.map(t => ({ url: t.url, title: t.title })), cur: S.tabs.findIndex(t => t.id === S.cur) });
+  store.set('history', S.hist.slice(0, 500));
+  store.set('bookmarks', S.bm);
+}, 400); };
+
+function toUrl(s) {
+  s = String(s || '').trim();
+  if (!s) return '';
+  if (/^(https?|data|blob|about):/i.test(s)) return s;
+  if (/^localhost(:\d+)?(\/|$)/i.test(s) || /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/|$)/.test(s)) return 'http://' + s;
+  if (!/\s/.test(s) && /^[^\s\/]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(s)) return 'https://' + s;
+  return SEARCH + encodeURIComponent(s);
+}
+
+function tabById(id) { return S.tabs.find(t => t.id === id); }
+function tabByName(n) { return S.tabs.find(t => t.name === n); }
+
+function newTab(url, active) {
+  const id = ++S.seq, name = 'ccb-' + Date.now().toString(36) + id;
+  const t = { id, name, url: url || '', title: url ? '加载中…' : '新标签', icon: url ? fav(url) : '', loading: !!url, back: 0 };
+  const f = document.createElement('iframe');
+  f.name = name;
+  f.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture; clipboard-read; clipboard-write; encrypted-media; geolocation; microphone; camera; display-capture; web-share');
+  f.setAttribute('allowfullscreen', '');
+  f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  f.addEventListener('load', () => { t.loading = false; draw(); });
+  t.frame = f;
+  const h = document.createElement('div'); h.className = 'home'; t.home = h;
+  $('#view').append(f, h);
+  S.tabs.push(t);
+  if (url) f.src = url;
+  if (active !== false) select(id); else draw();
+  save();
+  return t;
+}
+
+function select(id) {
+  const t = tabById(id); if (!t) return;
+  S.cur = id;
+  S.tabs.forEach(x => { x.frame.classList.toggle('on', x.id === id && !!x.url); x.home.classList.toggle('on', x.id === id && !x.url); });
+  if (!t.url) drawHome(t);
+  draw(); save();
+  if (!t.url) setTimeout(() => { const i = t.home.querySelector('input'); i && i.focus(); }, 0);
+}
+
+function closeTab(id) {
+  const i = S.tabs.findIndex(t => t.id === id); if (i < 0) return;
+  const [t] = S.tabs.splice(i, 1);
+  t.frame.remove(); t.home.remove();
+  if (!S.tabs.length) { newTab(''); return; }
+  if (S.cur === id) select(S.tabs[Math.min(i, S.tabs.length - 1)].id);
+  else draw();
+  save();
+}
+
+function go(input, id) {
+  const t = tabById(id || S.cur) || newTab('');
+  const url = toUrl(input); if (!url) return;
+  t.url = url; t.title = '加载中…'; t.icon = fav(url); t.loading = true;
+  t.frame.src = url;
+  t.frame.classList.toggle('on', t.id === S.cur); t.home.classList.remove('on');
+  draw(); save();
+  return t;
+}
+
+const cmd = (t, op, extra) => { try { t.frame.contentWindow.postMessage({ __ccbCommand: Object.assign({ op, name: t.name }, extra || {}) }, '*'); } catch (e) { } };
+
+function back() { const t = tabById(S.cur); if (t && t.url) cmd(t, 'back'); }
+function forward() { const t = tabById(S.cur); if (t && t.url) cmd(t, 'forward'); }
+function reload() {
+  const t = tabById(S.cur); if (!t || !t.url) return;
+  t.loading = true; draw();
+  cmd(t, 'reload');
+  // 没有钩子(插件没装/页面还没起来)时兜底: 重设 src
+  setTimeout(() => { if (t.loading && !t.hooked) t.frame.src = t.url; }, 1500);
+}
+
+function addHist(t) {
+  if (!t.url || /^about:/.test(t.url)) return;
+  const top = S.hist[0];
+  if (top && top.url === t.url) { top.title = t.title; top.at = Date.now(); }
+  else S.hist.unshift({ url: t.url, title: t.title, at: Date.now() });
+  if (S.hist.length > 500) S.hist.length = 500;
+  save();
+}
+
+function toggleStar() {
+  const t = tabById(S.cur); if (!t || !t.url) return;
+  const i = S.bm.findIndex(b => b.url === t.url);
+  if (i >= 0) S.bm.splice(i, 1); else S.bm.push({ url: t.url, title: t.title || t.url });
+  drawBm(); draw(); save();
+}
+
+// 页里的钩子(插件 iframe-hook.js)报的: 当前网址/标题/图标, 以及要开新标签
+window.addEventListener('message', e => {
+  const m = e.data && e.data.__ccb; if (!m) return;
+  if (POP && m.name === POP.frame.name) {
+    if (m.op === 'state' && m.url) { $('#popurl').textContent = m.url; POP.url = m.url; try { const o = new URL(POP.opener.url).hostname.split('.').slice(-2).join('.'); if (new URL(m.url).hostname.endsWith(o) && !/login|signin|auth|oauth/i.test(new URL(m.url).pathname)) { POP.done = true; setTimeout(() => closePopup(), 800); } } catch (x) { } }
+    if (m.op === 'closeSelf') { POP.done = true; closePopup(); }
+    return;
+  }
+  const t = tabByName(m.name) || S.tabs.find(x => x.frame.contentWindow === e.source);
+  if (!t) return;
+  if (m.op === 'state') {
+    t.hooked = true;
+    const changed = m.url && m.url !== t.url;
+    if (m.url) t.url = m.url;
+    if (m.title) t.title = m.title;
+    t.icon = m.icon || fav(t.url);
+    if (changed || m.title) addHist(t);
+    draw(); save();
+  } else if (m.op === 'open' && m.url) {
+    if (m.kind === 'popup' && m.pid) openPopup(t, m);
+    else newTab(m.url, m.kind !== 'middle');
+  } else if (m.op === 'closePopup') {
+    closePopup(m.pid);
+  } else if (m.op === 'popupMsg') {
+    const p = POP; if (p && p.pid === m.pid) try { p.frame.contentWindow.postMessage(m.data, m.origin || '*'); } catch (e) { }
+  }
+});
+
+// 网页弹的小窗(登录、授权): 浮层里开一个同样带登录的 iframe; 关了告诉开它的那页
+let POP = null;
+function openPopup(opener, m) {
+  closePopup();
+  const f = document.createElement('iframe');
+  f.name = 'ccb-pop-' + m.pid;
+  f.setAttribute('allow', 'clipboard-read; clipboard-write; publickey-credentials-get *; identity-credentials-get');
+  f.src = m.url;
+  POP = { pid: m.pid, frame: f, opener, url: m.url };
+  $('#pop .box').append(f);
+  $('#popurl').textContent = m.url;
+  $('#pop').classList.add('on');
+}
+function closePopup(pid) {
+  if (!POP || (pid && POP.pid !== pid)) return;
+  const p = POP; POP = null;
+  p.frame.remove(); $('#pop').classList.remove('on');
+  try { p.opener.frame.contentWindow.postMessage({ __ccbPopupClosed: { pid: p.pid } }, '*'); } catch (e) { }
+  if (p.done) cmd(p.opener, 'reload');
+}
+
+function draw() {
+  const tabsEl = $('#tabs'), nt = $('#newtab');
+  [...tabsEl.querySelectorAll('.tab')].forEach(n => n.remove());
+  S.tabs.forEach(t => {
+    const d = document.createElement('div');
+    d.className = 'tab' + (t.id === S.cur ? ' on' : '') + (t.loading ? ' load' : '');
+    d.title = (t.title || '') + (t.url ? '\n' + t.url : '');
+    d.dataset.id = t.id;
+    if (t.icon) { const im = document.createElement('img'); im.src = t.icon; im.onerror = () => { im.style.visibility = 'hidden'; }; d.append(im); }
+    const s = document.createElement('span'); s.className = 't'; s.textContent = t.title || t.url || '新标签'; d.append(s);
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×'; x.title = '关闭 (Ctrl+W)';
+    x.onclick = ev => { ev.stopPropagation(); closeTab(t.id); };
+    d.append(x);
+    d.onclick = () => select(t.id);
+    d.onauxclick = ev => { if (ev.button === 1) closeTab(t.id); };
+    tabsEl.insertBefore(d, nt);
+  });
+  const t = tabById(S.cur);
+  const u = $('#url');
+  if (document.activeElement !== u) u.value = t && t.url ? t.url : '';
+  $('#back').disabled = $('#fwd').disabled = $('#rel').disabled = !(t && t.url);
+  const starred = t && t.url && S.bm.some(b => b.url === t.url);
+  $('#star').textContent = starred ? '★' : '☆';
+  $('#star').classList.toggle('on', !!starred);
+  document.title = t && t.title && t.url ? t.title + ' — 浏览器' : '浏览器';
+}
+
+function drawBm() {
+  const el = $('#bm'); el.innerHTML = '';
+  S.bm.forEach(b => {
+    const a = document.createElement('a'); a.title = b.url;
+    const im = document.createElement('img'); im.src = fav(b.url); im.onerror = () => { im.style.display = 'none'; };
+    const s = document.createElement('span'); s.textContent = b.title || b.url;
+    a.append(im, s);
+    a.onclick = ev => { ev.preventDefault(); if (ev.ctrlKey || ev.metaKey) newTab(b.url, false); else go(b.url); };
+    a.onauxclick = ev => { if (ev.button === 1) newTab(b.url, false); };
+    a.oncontextmenu = ev => { ev.preventDefault(); if (confirm('删掉书签「' + (b.title || b.url) + '」?')) { S.bm = S.bm.filter(x => x !== b); drawBm(); draw(); save(); } };
+    el.append(a);
+  });
+}
+
+function drawHome(t) {
+  const h = t.home; h.innerHTML = '';
+  const h1 = document.createElement('h1'); h1.textContent = '🌐 浏览器';
+  const i = document.createElement('input'); i.placeholder = '搜索或输入网址'; i.spellcheck = false;
+  i.onkeydown = ev => { if (ev.key === 'Enter' && i.value.trim()) go(i.value, t.id); };
+  const g = document.createElement('div'); g.className = 'grid';
+  S.bm.slice(0, 16).forEach(b => {
+    const d = document.createElement('div'); d.className = 'tile'; d.title = b.url;
+    const im = document.createElement('img'); im.src = fav(b.url);
+    const s = document.createElement('span'); s.textContent = b.title || b.url;
+    d.append(im, s); d.onclick = () => go(b.url, t.id);
+    g.append(d);
+  });
+  h.append(h1, i, g);
+  if (S.hist.length) {
+    const sec = document.createElement('div'); sec.className = 'sec'; sec.textContent = '最近访问';
+    const list = document.createElement('div'); list.className = 'hist';
+    S.hist.slice(0, 12).forEach(x => {
+      const d = document.createElement('div');
+      const im = document.createElement('img'); im.src = fav(x.url);
+      const ti = document.createElement('span'); ti.className = 'ti'; ti.textContent = x.title || x.url;
+      const u = document.createElement('span'); u.className = 'u'; u.textContent = x.url.replace(/^https?:\/\//, '');
+      d.append(im, ti, u); d.onclick = () => go(x.url, t.id);
+      list.append(d);
+    });
+    h.append(sec, list);
+  }
+}
+
+$('#newtab').onclick = () => newTab('');
+$('#popx').onclick = () => { if (POP) POP.done = true; closePopup(); };
+$('#popext').onclick = () => { if (POP) window.open(POP.url, '_blank'); };
+$('#pop').onclick = e => { if (e.target.id === 'pop') { if (POP) POP.done = true; closePopup(); } };
+$('#back').onclick = back;
+$('#fwd').onclick = forward;
+$('#rel').onclick = reload;
+$('#home').onclick = () => { const t = tabById(S.cur); if (!t) return; t.url = ''; t.title = '新标签'; t.icon = ''; t.frame.removeAttribute('src'); t.frame.src = 'about:blank'; select(t.id); };
+$('#star').onclick = toggleStar;
+$('#ext').onclick = () => { const t = tabById(S.cur); if (t && t.url) window.open(t.url, '_blank'); };
+const urlEl = $('#url');
+urlEl.onkeydown = ev => { if (ev.key === 'Enter') { go(urlEl.value); urlEl.blur(); } else if (ev.key === 'Escape') { urlEl.blur(); draw(); } };
+urlEl.onfocus = () => setTimeout(() => urlEl.select(), 0);
+urlEl.onblur = () => draw();
+document.addEventListener('keydown', ev => {
+  const c = ev.ctrlKey || ev.metaKey;
+  if (c && ev.key === 't') { ev.preventDefault(); newTab(''); }
+  else if (c && ev.key === 'w') { ev.preventDefault(); closeTab(S.cur); }
+  else if (c && ev.key === 'l') { ev.preventDefault(); urlEl.focus(); }
+  else if (c && ev.key === 'r') { ev.preventDefault(); reload(); }
+  else if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); back(); }
+  else if (ev.altKey && ev.key === 'ArrowRight') { ev.preventDefault(); forward(); }
+  else if (c && /^[1-9]$/.test(ev.key)) { ev.preventDefault(); const t = S.tabs[ev.key === '9' ? S.tabs.length - 1 : +ev.key - 1]; t && select(t.id); }
+});
+
+// 给 agent 用: 不经界面也能开页、切标签、看状态; 操控页面内容走 browser.frame*(插件 CDP)
+window.__browser = {
+  popup: () => POP && { pid: POP.pid, name: POP.frame.name, url: POP.url, opener: POP.opener.id },
+  closePopup: () => { if (POP) POP.done = true; closePopup(); return true; },
+  state: () => ({ cur: S.cur, popup: POP && { name: POP.frame.name, url: POP.url, opener: POP.opener.id }, tabs: S.tabs.map(t => ({ id: t.id, name: t.name, url: t.url, title: t.title, active: t.id === S.cur, loading: t.loading })) }),
+  open: (url, active) => { const t = newTab(toUrl(url), active); return { id: t.id, name: t.name, url: t.url }; },
+  go: (url, id) => { const t = go(url, id); return t && { id: t.id, name: t.name, url: t.url }; },
+  select: id => { select(id); return true; },
+  close: id => { closeTab(id || S.cur); return true; },
+  back: () => { back(); return true; },
+  forward: () => { forward(); return true; },
+  reload: () => { reload(); return true; }
+};
+window.pick = (x, y) => {
+  const t = tabById(S.cur);
+  if (y > $('#view').getBoundingClientRect().top && t && t.url) return '浏览器里的网页: ' + t.title + ' (' + t.url + '), iframe name=' + t.name;
+  return null;
+};
+
+(async () => {
+  S.bm = await store.get('bookmarks', null) || DEFAULT_BM.slice();
+  S.hist = await store.get('history', []) || [];
+  drawBm();
+  // 插件在不在: 不在就提示, 网页可能嵌不进来、也带不上登录
+  let hooked = false;
+  const sess = await store.get('session', null);
+  if (sess && sess.tabs && sess.tabs.length) {
+    sess.tabs.forEach(x => newTab(x.url, false));
+    const t = S.tabs[Math.max(0, Math.min(sess.cur, S.tabs.length - 1))];
+    select(t.id);
+  } else newTab('');
+  setTimeout(() => {
+    hooked = S.tabs.some(t => t.hooked);
+    if (!hooked && S.tabs.some(t => t.url)) {
+      const w = $('#warn'); w.classList.add('on');
+      w.textContent = '没收到网页的回报: 要装 Colony Bridge 插件, 并在窗口顶栏把「🔒 隔离运行」点成「完全访问」, 网页才嵌得进来、带得上登录。';
+    }
+  }, 6000);
+})();
+</script>
+</body>
+</html>

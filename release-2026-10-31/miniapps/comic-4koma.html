@@ -1,0 +1,54 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>四格拼版</title><meta name="description" content="工作流节点: 四张图+标题+对白 → 一张带讲解的四格漫画成品图"><style>body{margin:0;background:#111;color:#ddd;font:14px system-ui;display:flex;align-items:center;justify-content:center;height:100vh}img{max-height:96vh;box-shadow:0 10px 40px #000}</style></head><body><div id="v">等工作流把四格送进来…</div><script>
+const W = 1600, H = 2000;
+async function src(m) {
+  if (!m) return null;
+  if (typeof m === 'string') return m.startsWith('data:') || m.startsWith('http') ? m : null;
+  if (m.__wfasset) { const r = await colony.call('workflow.assetGet', { id: m.__wfasset }); const d = r.data || r; return String(d).startsWith('data:') ? d : 'data:' + (m.mimeType || 'image/png') + ';base64,' + d; }
+  if (m.dataUrl) return m.dataUrl;
+  if (m.data) return 'data:' + (m.mimeType || 'image/png') + ';base64,' + m.data;
+  return null;
+}
+const load = s => new Promise(ok => { if (!s) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = s; });
+function wrap(g, t, maxW) { const out = []; let line = ''; for (const ch of String(t)) { if (g.measureText(line + ch).width > maxW && line) { out.push(line); line = ch; } else line += ch; } if (line) out.push(line); return out; }
+function bubble(g, text, cx, y, maxW) {
+  g.font = '700 46px "PingFang SC","Microsoft YaHei",sans-serif';
+  const ls = wrap(g, text, maxW - 60), lh = 58, w = Math.min(maxW, Math.max(...ls.map(l => g.measureText(l).width)) + 60), h = ls.length * lh + 36, x = cx - w / 2;
+  g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 5;
+  g.beginPath(); g.roundRect(x, y, w, h, 28); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(cx - 22, y + h - 3); g.lineTo(cx - 6, y + h + 30); g.lineTo(cx + 18, y + h - 3); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(cx - 22, y + h); g.lineTo(cx - 6, y + h + 30); g.lineTo(cx + 18, y + h); g.stroke();
+  g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'top';
+  ls.forEach((l, i) => g.fillText(l, cx, y + 18 + i * lh));
+}
+async function compose(inp) {
+  const ims = await Promise.all([1, 2, 3, 4].map(async i => load(await src(inp['m' + i]))));
+  let lines = inp.lines || '';
+  if (typeof lines === 'string') lines = lines.split(/\n+/).map(s => s.replace(/^\s*\d+[.、)]\s*/, '').trim()).filter(Boolean);
+  const title = String(inp.title || '四格漫画').trim(), topic = String(inp.task || '').trim();
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#FFF6E0'; g.fillRect(0, 0, W, H);
+  for (let y = 0; y < H; y += 24) for (let x = (y / 24 % 2) * 12; x < W; x += 24) { g.fillStyle = 'rgba(255,170,0,.10)'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); }
+  g.fillStyle = '#111'; g.font = '900 104px "PingFang SC","Microsoft YaHei",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillText(title, W / 2, 46);
+  if (topic) { g.font = '600 36px "PingFang SC","Microsoft YaHei",sans-serif'; g.fillStyle = '#7a5a00'; g.fillText('一句话：「' + topic + '」', W / 2, 168); }
+  const pad = 56, gap = 36, top = 236, cw = (W - pad * 2 - gap) / 2, ch = (H - top - pad - gap - 64) / 2;
+  ims.forEach((im, i) => {
+    const x = pad + (i % 2) * (cw + gap), y = top + Math.floor(i / 2) * (ch + gap);
+    g.save(); g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,.25)'; g.shadowBlur = 18; g.shadowOffsetY = 8; g.fillRect(x, y, cw, ch); g.restore();
+    g.save(); g.beginPath(); g.rect(x, y, cw, ch); g.clip();
+    if (im) { const k = Math.max(cw / im.width, ch / im.height); g.drawImage(im, x + (cw - im.width * k) / 2, y + (ch - im.height * k) / 2, im.width * k, im.height * k); }
+    else { g.fillStyle = '#ddd'; g.fillRect(x, y, cw, ch); }
+    g.restore();
+    g.lineWidth = 8; g.strokeStyle = '#111'; g.strokeRect(x, y, cw, ch);
+    g.fillStyle = '#FFB020'; g.beginPath(); g.arc(x + 46, y + 46, 30, 0, 7); g.fill(); g.lineWidth = 4; g.stroke();
+    g.fillStyle = '#111'; g.font = '900 36px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i + 1), x + 46, y + 48);
+    if (lines[i]) bubble(g, lines[i], x + cw / 2, y + ch - 190, cw - 60);
+  });
+  g.fillStyle = '#9a7a20'; g.font = '600 30px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillText('Colony 工作流 · 一句话生成四格漫画', W / 2, H - 70);
+  const url = c.toDataURL('image/png');
+  document.getElementById('v').innerHTML = '<img src="' + url + '">';
+  return url;
+}
+colony.expose('node:invoke', async ({ inputs }) => { const url = await compose(inputs || {}); return { outputs: { media: url, text: String(inputs.title || '') } }; });
+</script></body></html>

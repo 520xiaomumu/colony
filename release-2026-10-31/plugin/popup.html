@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --bg:#111; --fg:#eee; --line:#2a2a2a; --card:#1a1a1a; --accent:#9e0; }
+  body { width: 320px; margin: 0; font: 13px/1.55 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  .wrap { padding: 14px; }
+  h1 { font-size: 14px; margin: 0 0 2px; display:flex; align-items:center; gap:6px; }
+  h1 small { opacity: .45; font-weight: 400; margin-left:auto; font-size:11px; }
+  .bar { display:flex; gap:8px; margin:12px 0 6px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { flex:1; }
+  ul { margin: 8px 0 0; padding: 0; list-style: none; }
+  li { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 6px; font-size: 12px; display:flex; align-items:center; gap:6px; }
+  li .st { font-weight: 600; } .ok{color:var(--accent);} .warn{color:#fb0;} .dim{opacity:.6;}
+  li .ep-hint { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li button { flex:0 0 auto; font-size:11px; padding:3px 8px; }
+  li .sdkbox { flex:0 0 auto; display:inline-flex; align-items:center; gap:3px; font-size:10px; opacity:.75; cursor:pointer; }
+  li .sdkbox input { margin:0; accent-color: var(--accent); }
+  li .models { opacity:.55; font-size:11px; margin-left:auto; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .keyrow { padding:5px; }
+  .keyrow input { flex:1; min-width:0; font:12px/1.4 system-ui,sans-serif; padding:5px 8px; border-radius:7px; border:1px solid var(--line); background:#0d0d0d; color:var(--fg); }
+  .foot { margin-top:12px; padding-top:10px; border-top:1px solid var(--line); display:flex; align-items:center; gap:10px; font-size:12px; }
+  .foot label { display:flex; gap:5px; align-items:center; cursor:pointer; }
+  .add { display:flex; gap:6px; margin-top:8px; }
+  .add input { flex:1; font:inherit; padding:5px 8px; border-radius:7px; border:1px solid var(--line); background:#0d0d0d; color:var(--fg); }
+  .hint { opacity:.5; font-size:11px; margin:8px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌉 Colony Bridge <small id="ver"></small></h1>
+  <div class="hint">扫描本机在监听的 OpenAI 兼容端点(产品无关, 按端口报)。发现的端点回 Colony 页面「扫描」即可加为群聊成员。</div>
+  <div class="bar">
+    <button class="primary" id="scan">🔎 扫描本机端点</button>
+    <button id="reload" title="吃磁盘上的最新插件文件(改了插件后点这, 不用去 chrome://extensions)">🔄 重载</button>
+  </div>
+  <ul id="list"></ul>
+  <div class="hint" style="margin-top:12px">🖥 本机成员(已接进 Colony 群聊的本地 agent · 🧠=记忆连续 / 💤=每轮独立):</div>
+  <ul id="members"></ul>
+  <div class="add">
+    <input type="text" id="cport" placeholder="补充要扫的端口, 如 5678" inputmode="numeric">
+    <button id="cadd">＋</button>
+  </div>
+  <div class="hint" style="margin-top:12px">☁ 云端成员(经云端桥跨网接入的 agent; 申请在这里通过):</div>
+  <ul id="cloud"></ul>
+  <div class="hint" style="margin-top:12px">📦 接入包导出 — 把接入办法带给还没进群的 agent:</div>
+  <div class="bar" style="margin-top:6px">
+    <button id="exp-ep" title="复制给「有 OpenAI 兼容能力」的 agent 的自配置指令(开面/自验/报地址)">📋 端口型</button>
+    <button id="exp-cli" title="复制「纯 CLI」agent 的指令 + 网关壳源码(一份贴过去即可, 不用再单独下载壳)">📋 CLI型·含壳</button>
+    <button id="exp-cloud" title="复制「跨网连云端桥」agent 的指令(桥地址已写死 + webhook 首选 + 末尾附长轮询兜底源码, 一份贴过去即可)">📋 云端型·含兜底</button>
+    <button id="exp-agent" title="下载云端接入器 colony-agent.mjs(云端型的兜底代码: 长轮询连桥)">⬇ 备用·接入器</button>
+  </div>
+  <div class="foot">
+    <label><input type="checkbox" id="notify"> 桌面通知</label>
+    <label style="margin-left:10px" title="勾上: Colony(colonyai.fun)的麦克风、摄像头、通知、弹窗、多文件下载默认允许, 语音输入/双工对话/录像不再弹授权框。录屏选哪个屏幕是浏览器强制的, 改不了。取消勾选恢复成每次询问"><input type="checkbox" id="autoperm"> 默认授权</label>
+    <span class="dim" id="msg" style="margin-left:auto"></span>
+  </div>
+</div>
+<script src="instr.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

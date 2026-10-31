@@ -1,0 +1,225 @@
+{
+  "createdAt": 1791961994774,
+  "name": "一句话四格漫画",
+  "nodes": [
+    {
+      "id": "writer",
+      "title": "编剧",
+      "miniappId": "wfnode-ai",
+      "x": 80,
+      "y": 50,
+      "params": {
+        "mode": "对话",
+        "prompt": "你是四格漫画编剧。用户给一句话, 你写一个有反转笑点的四格漫画。只输出 JSON, 不要别的字: {\"topic\":\"用户原话\",\"title\":\"标题(≤8字)\",\"p1\":\"第1格画面英文生图提示\",\"p2\":\"…\",\"p3\":\"…\",\"p4\":\"…\",\"lines\":\"1. 第1格中文对白(≤12字)\\n2. …\\n3. …\\n4. …\"}。每格提示都以同一句画风开头: 'Cute flat cartoon comic panel, bold black outlines, vivid colors, consistent characters,' 再写这一格的角色、动作、表情、场景, 角色外貌四格一致(每格都完整重复描述角色外貌), 画面下方留出空白放对白气泡, 不要在画里写字。"
+      },
+      "ports": {
+        "outputs": [
+          {
+            "name": "topic",
+            "type": "text"
+          },
+          {
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "name": "p1",
+            "type": "text"
+          },
+          {
+            "name": "p2",
+            "type": "text"
+          },
+          {
+            "name": "p3",
+            "type": "text"
+          },
+          {
+            "name": "p4",
+            "type": "text"
+          },
+          {
+            "name": "lines",
+            "type": "text"
+          }
+        ]
+      },
+      "seedInputs": {}
+    },
+    {
+      "id": "img1",
+      "title": "第一格",
+      "miniappId": "wfnode-ai",
+      "x": 330,
+      "y": 50,
+      "params": {
+        "mode": "生图",
+        "aspectRatio": "1:1",
+        "provider": "本地",
+        "model": "grok-imagine-image-2.0"
+      }
+    },
+    {
+      "id": "img2",
+      "title": "第二格",
+      "miniappId": "wfnode-ai",
+      "x": 330,
+      "y": 355,
+      "params": {
+        "mode": "生图",
+        "aspectRatio": "1:1",
+        "provider": "本地",
+        "model": "grok-imagine-image-2.0"
+      }
+    },
+    {
+      "id": "img3",
+      "title": "第三格",
+      "miniappId": "wfnode-ai",
+      "x": 330,
+      "y": 660,
+      "params": {
+        "mode": "生图",
+        "aspectRatio": "1:1",
+        "provider": "本地",
+        "model": "grok-imagine-image-2.0"
+      }
+    },
+    {
+      "id": "img4",
+      "title": "第四格",
+      "miniappId": "wfnode-ai",
+      "x": 330,
+      "y": 965,
+      "params": {
+        "mode": "生图",
+        "aspectRatio": "1:1",
+        "provider": "本地",
+        "model": "grok-imagine-image-2.0"
+      }
+    },
+    {
+      "id": "comp",
+      "title": "拼版成品",
+      "miniappId": "mmvv9y0a3cxc",
+      "x": 580,
+      "y": 50,
+      "seedInputs": {}
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": "writer",
+        "port": "p1"
+      },
+      "to": {
+        "node": "img1",
+        "port": "task"
+      }
+    },
+    {
+      "from": {
+        "node": "img1",
+        "port": "media"
+      },
+      "to": {
+        "node": "comp",
+        "port": "m1"
+      }
+    },
+    {
+      "from": {
+        "node": "writer",
+        "port": "p2"
+      },
+      "to": {
+        "node": "img2",
+        "port": "task"
+      }
+    },
+    {
+      "from": {
+        "node": "img2",
+        "port": "media"
+      },
+      "to": {
+        "node": "comp",
+        "port": "m2"
+      }
+    },
+    {
+      "from": {
+        "node": "writer",
+        "port": "p3"
+      },
+      "to": {
+        "node": "img3",
+        "port": "task"
+      }
+    },
+    {
+      "from": {
+        "node": "img3",
+        "port": "media"
+      },
+      "to": {
+        "node": "comp",
+        "port": "m3"
+      }
+    },
+    {
+      "from": {
+        "node": "writer",
+        "port": "p4"
+      },
+      "to": {
+        "node": "img4",
+        "port": "task"
+      }
+    },
+    {
+      "from": {
+        "node": "img4",
+        "port": "media"
+      },
+      "to": {
+        "node": "comp",
+        "port": "m4"
+      }
+    },
+    {
+      "from": {
+        "node": "writer",
+        "port": "title"
+      },
+      "to": {
+        "node": "comp",
+        "port": "title"
+      }
+    },
+    {
+      "from": {
+        "node": "writer",
+        "port": "lines"
+      },
+      "to": {
+        "node": "comp",
+        "port": "lines"
+      }
+    },
+    {
+      "from": {
+        "node": "writer",
+        "port": "topic"
+      },
+      "to": {
+        "node": "comp",
+        "port": "task"
+      }
+    }
+  ],
+  "initialInputs": {},
+  "updatedAt": 1793383797530,
+  "id": "wf_e8c9ef94"
+}

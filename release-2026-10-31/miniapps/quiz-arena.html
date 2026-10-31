@@ -1,0 +1,105 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>答题擂台</title>
+<meta name="description" content="几个 agent 同台答一道题(各答各的, 互相看不到), 再匿名互评: 每条评语当场飞到答卷上, 最后亮分颁奖。用法: 写题目和评分要点 → 选选手 → 选评审(可和选手重叠, 不给自己打分) → 开赛。赛果自动存档。">
+<style>
+:root{color-scheme:dark;--g:#c8f560;--p:#ff8fc8;--b:#7cc8ff;--bg:#0e0d16}
+*{box-sizing:border-box}body{margin:0;font:15px/1.6 -apple-system,"PingFang SC",sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#2a2150 0,var(--bg) 60%);color:#eceaf4;min-height:100vh}
+.w{max-width:1280px;margin:0 auto;padding:18px 22px}
+header{display:flex;align-items:center;gap:14px}h1{margin:0;font-size:24px;letter-spacing:1px}h1 span{color:var(--g)}
+.setup{display:grid;grid-template-columns:1fr 340px;gap:14px;margin-top:12px}
+textarea,input{width:100%;background:#17152366;color:inherit;border:1px solid #33304a;border-radius:10px;padding:10px 12px;font:inherit}
+.mu{color:#9b97b0;font-size:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+button{background:#1f1c2e;color:inherit;border:1px solid #3a3655;border-radius:10px;padding:8px 16px;cursor:pointer;font:inherit}
+button.pri{background:var(--g);color:#111;border:none;font-weight:700;font-size:16px;padding:10px 26px}button:disabled{opacity:.45}
+.chip{background:#272339;border-radius:99px;padding:2px 12px;font-size:13px}
+/* 舞台 */
+.q{margin:18px 0 6px;padding:16px 20px;border-radius:16px;background:linear-gradient(90deg,#2b2248,#1b1830);border:1px solid #3d3560;font-size:20px;font-weight:600}
+.q small{display:block;font-size:12px;color:#a9a2c8;font-weight:400;margin-bottom:4px;letter-spacing:2px}
+.stage{display:grid;grid-template-columns:repeat(var(--n,3),1fr);gap:16px;margin-top:14px}
+.seat{position:relative;border-radius:18px;background:#16142299;border:1px solid #302c48;padding:14px;min-height:300px;display:flex;flex-direction:column;transition:.4s}
+.seat.win{border-color:var(--g);box-shadow:0 0 0 2px var(--g),0 0 40px #c8f56044}
+.who{display:flex;align-items:center;gap:10px}.av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:22px;background:#2a2640}
+.nm{font-weight:700;font-size:17px}.tag{font-size:11px;color:#a9a2c8}
+.st{margin-left:auto;font-size:12px;padding:2px 10px;border-radius:99px;background:#2a2640}
+.st.think{color:var(--b)}.st.done{color:var(--g)}.st.err{color:#ff8a80}
+.dots::after{content:'…';animation:d 1.2s infinite}@keyframes d{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
+.ans{margin-top:12px;padding:14px;border-radius:12px;background:#0f0e18;border:1px dashed #3a3655;font-size:19px;line-height:1.5;min-height:84px;position:relative}
+.ans .cv{position:absolute;inset:0;border-radius:12px;background:repeating-linear-gradient(45deg,#221f33 0 10px,#1b1929 10px 20px);display:grid;place-items:center;color:#8d88a8;font-size:14px;transition:opacity .6s}
+.ans.open .cv{opacity:0;pointer-events:none}
+.code{font-size:12px;color:#8d88a8;margin-top:6px}
+.cm{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.bub{padding:8px 12px;border-radius:12px;background:#221f33;font-size:14px;animation:in .5s both;border-left:4px solid var(--b)}
+.bub b{color:var(--b)}.bub .sc{float:right;font-weight:800;font-size:18px;color:#fff}
+@keyframes in{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+.score{margin-top:auto;padding-top:10px;display:flex;align-items:baseline;gap:8px}
+.score .big{font-size:40px;font-weight:900;color:var(--g);font-variant-numeric:tabular-nums}
+.medal{position:absolute;top:-18px;left:-12px;font-size:34px;animation:in .6s both}
+.log{margin-top:14px;font-size:13px;color:#a9a2c8;min-height:20px}
+.hist .card{background:#16142299;border:1px solid #302c48;border-radius:12px;padding:10px 14px;margin:8px 0}
+</style></head><body><div class="w">
+<header><h1>🏟 答题<span>擂台</span></h1><span class="mu">几个 agent 同台作答 · 匿名互评 · 当场亮分</span></header>
+<div class="setup"><div>
+<label class="mu">题目</label><textarea id="q" rows="2">用三句话向一个十岁孩子解释: 为什么天空是蓝色的?</textarea>
+<label class="mu">评分要点(评审照这个打 1-10 分)</label><input id="rub" value="准确, 好懂, 简洁"></div>
+<div><div class="row"><button id="pickP">选选手</button><span id="ps"></span></div>
+<div class="row"><button id="pickJ">选评审</button><span id="js"></span></div>
+<div class="row"><button id="go" class="pri" disabled>开赛</button><button id="hist">历史</button></div></div></div>
+<div id="arena"></div><div class="log" id="msg"></div><div id="out" class="hist"></div></div>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+const 睡=ms=>new Promise(r=>setTimeout(r,ms));
+const 头像=m=>m.kind==='agent'?'🤖':m.kind==='human'?'🧑':'✨';
+const 类=m=>m.kind==='agent'?'电脑上的 agent':m.kind==='human'?'好友':'AI 模型';
+let P=[], J=[];
+const 显=()=>{ $('ps').innerHTML=P.map(m=>'<span class=chip>'+esc(m.name)+'</span>').join(' '); $('js').innerHTML=J.map(m=>'<span class=chip>'+esc(m.name)+'</span>').join(' '); $('go').disabled=P.length<2||!J.length; };
+$('pickP').onclick=async()=>{ P=(await colony.call('bridge.pick',{n:6,why:'答题擂台: 选 2 位以上选手'})).filter(m=>m.kind!=='human'); 显(); };
+$('pickJ').onclick=async()=>{ J=(await colony.call('bridge.pick',{n:4,why:'答题擂台: 选评审(可以和选手是同一个, 不会给自己打分)'})).filter(m=>m.kind!=='human'); 显(); };
+const 洗=a=>{a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0; [a[i],a[j]]=[a[j],a[i]];} return a;};
+const 抠=t=>{ const m=String(t).match(/\{[\s\S]*\}/); if(!m) throw new Error('没有 JSON'); return JSON.parse(m[0]); };
+const 问=(m,局,text,system)=>colony.call('bridge.ask',{to:m.id,session:局+'-'+m.id,text,system});
+// 舞台: 每位选手一个座位
+const 搭台=(q)=>{ $('arena').innerHTML='<div class=q><small>本 场 题 目</small>'+esc(q)+'</div><div class=stage style="--n:'+P.length+'">'+P.map((m,i)=>
+  '<div class=seat id=s'+i+'><div class=who><div class=av>'+头像(m)+'</div><div><div class=nm>'+esc(m.name)+'</div><div class=tag>'+类(m)+'</div></div><span class="st think" id=st'+i+'>思考中<span class=dots></span></span></div>'
+  +'<div class=ans id=a'+i+'><span class=txt></span><div class=cv>答卷封着, 互相看不到</div></div><div class=code id=c'+i+'></div><div class=cm id=m'+i+'></div><div class=score id=k'+i+'></div></div>').join('')+'</div>'; };
+$('go').onclick=async()=>{
+  const q=$('q').value.trim(), rub=$('rub').value.trim(), 局='arena-'+Date.now().toString(36);
+  $('go').disabled=true; $('out').innerHTML=''; 搭台(q); const t0=Date.now();
+  $('msg').textContent='① 同时作答: 每位选手单独一个会话, 看不到别人';
+  const 答=await Promise.all(P.map(async(m,i)=>{ const t=Date.now();
+    try{ const r=await 问(m,局,'题目: '+q+'\n\n直接给出你的回答, 不要复述题目, 不要说你是谁。','你在参加一场匿名答题比赛, 回答会被打分。');
+      $('st'+i).className='st done'; $('st'+i).textContent='✓ 交卷 '+((Date.now()-t)/1000).toFixed(0)+'s'; return {m,i,text:r.content.replace(/\*\*|__|^#+\s*/gm,'').replace(/^["「“]|["」”]$/g,'').trim()}; }
+    catch(e){ $('st'+i).className='st err'; $('st'+i).textContent='✗ 没交卷'; return {m,i,text:null,err:e.message}; } }));
+  const 有=洗(答.filter(a=>a.text));
+  if(有.length<2){ $('msg').textContent='能比的答卷不到 2 份, 停了'; $('go').disabled=false; return; }
+  有.forEach((a,k)=>{ a.号='答卷'+String.fromCharCode(65+k); $('c'+a.i).textContent='匿名号 '+a.号; });
+  $('msg').textContent='② 开卷'; await 睡(500);
+  for(const a of 有){ const e=$('a'+a.i); e.querySelector('.txt').textContent=a.text; e.classList.add('open'); await 睡(700); }
+  $('msg').textContent='③ 匿名互评: 评审只看到答卷号, 不评自己';
+  const 评=await Promise.all(J.map(async j=>{
+    const 看=有.filter(a=>a.m.id!==j.id);
+    const 卷=看.map(a=>'【'+a.号+'】\n'+a.text).join('\n\n');
+    const fmt='{"scores":{'+看.map(a=>'"'+a.号+'":{"分":1到10,"理由":"一句话, 15 字内, 可以毒舌"}').join(',')+'}}';
+    for(let 次=0;次<2;次++){ try{
+      const r=await 问(j,局+'-judge'+次,'题目: '+q+'\n评分要点: '+rub+'\n\n下面是匿名答卷:\n\n'+卷+'\n\n逐份打 1-10 分(整数), 理由一句话。只回一个 JSON, 格式:\n'+fmt,'你是公正又有点毒舌的评审。不知道也不要猜答卷作者是谁。只输出 JSON。');
+      const s=抠(r.content).scores||{}; if(看.every(a=>s[a.号]&&+s[a.号].分>=1&&+s[a.号].分<=10)) return {j,s}; } catch(e){} }
+    return {j,s:null}; }));
+  // 评语一条条飞上答卷
+  for(const e of 评){ if(!e.s) continue; for(const a of 有){ const v=e.s[a.号]; if(!v) continue;
+    const d=document.createElement('div'); d.className='bub'; d.innerHTML='<span class=sc>'+v.分+'</span><b>'+esc(e.j.name)+'</b> '+esc(v.理由||''); $('m'+a.i).appendChild(d); await 睡(650); } }
+  const 表=有.map(a=>{ const 分=评.filter(e=>e.s&&e.s[a.号]).map(e=>+e.s[a.号].分).sort((x,y)=>x-y);
+    const 用=分.length>=3?分.slice(1,-1):分; return {a, 分, 均:用.length?用.reduce((x,y)=>x+y,0)/用.length:0}; }).sort((x,y)=>y.均-x.均);
+  $('msg').textContent='④ 亮分'; await 睡(400);
+  for(const r of 表.slice().reverse()){ $('k'+r.a.i).innerHTML='<span class=big>'+r.均.toFixed(1)+'</span><span class=mu>'+r.分.join(' / ')+'</span>'; await 睡(600); }
+  表.forEach((r,k)=>{ const s=$('s'+r.a.i); if(k<3) s.insertAdjacentHTML('beforeend','<div class=medal>'+['🥇','🥈','🥉'][k]+'</div>'); if(!k) s.classList.add('win'); });
+  const 坏=评.filter(e=>!e.s).map(e=>e.j.name);
+  $('msg').textContent='赛完 · 用时 '+((Date.now()-t0)/1000).toFixed(0)+' 秒 · 评审 '+J.map(j=>j.name).join('、')+(J.length>=3?' · 去掉最高最低后平均':'')+(坏.length?' · '+坏.join('、')+' 没给出合格评分':'');
+  const 档=(await colony.call('store.get',{key:'history'}).catch(()=>null))||[];
+  档.unshift({at:Date.now(),q,rub,rank:表.map(r=>({name:r.a.m.name,号:r.a.号,均:+r.均.toFixed(2),分:r.分,text:r.a.text})),reviews:评.filter(e=>e.s).map(e=>({j:e.j.name,s:e.s})),judges:J.map(j=>j.name)});
+  await colony.call('store.set',{key:'history',value:档.slice(0,30)});
+  $('go').disabled=false;
+  window.__result={rank:表.map(r=>[r.a.m.name,+r.均.toFixed(1),r.分,r.a.text]),reviews:评.filter(e=>e.s).map(e=>[e.j.name,e.s]),坏};
+};
+$('hist').onclick=async()=>{ const h=(await colony.call('store.get',{key:'history'}).catch(()=>null))||[];
+  $('out').innerHTML=h.length?h.map(x=>'<div class=card><div class=mu>'+new Date(x.at).toLocaleString()+'</div><b>'+esc(x.q)+'</b><div>'+x.rank.map((r,i)=>(i+1)+'. '+esc(r.name)+' '+r.均).join(' · ')+'</div></div>').join(''):'<div class=mu>还没有赛果</div>'; };
+// 测试用: 不弹框直接用这些成员(agent 自测时调)
+window.设=(p,j)=>{P=p;J=j;显();};
+</script></body></html>
