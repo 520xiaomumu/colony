@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "Colony Bridge",
+  "version": "0.5.0",
+  "description": "Colony 通用浏览器与网络枢纽: HTTP(S) 转发、Chrome tabs/CDP RPC(含事件回传)、chrome.* 透传、用户脚本(篡改猴式)、本机端点扫描、通知与自重载。子框架摘掉 XFO/CSP 以便 Colony 内用真 iframe 浏览。",
+  "permissions": [
+    "storage",
+    "notifications",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess",
+    "clipboardWrite",
+    "cookies",
+    "tabs",
+    "activeTab",
+    "debugger",
+    "scripting",
+    "userScripts",
+    "downloads",
+    "history",
+    "bookmarks",
+    "webNavigation",
+    "contextMenus",
+    "alarms",
+    "tabGroups",
+    "sessions",
+    "offscreen",
+    "contentSettings"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "strip_origin",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "background": {
+    "service_worker": "bg.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "cs.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "iframe-hook.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Colony Bridge"
+  },
+  "minimum_chrome_version": "120"
+}

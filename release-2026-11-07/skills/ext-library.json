@@ -1,0 +1,31 @@
+{
+  "format": "colony-ext/1",
+  "at": 1793990543557,
+  "items": [
+    {
+      "id": "github-pages-publish",
+      "kind": "skill",
+      "name": "github-pages-publish",
+      "description": "把「已有的」静态网页文件（单个 HTML 或整个网站目录）安全发布到 GitHub Pages，生成可公开访问、能分享的网址链接。当用户已有现成网页，想「发到网上」「部署上线」「发布网页」「生成分享链接」时使用；本技能只做「发布已有文件」，不负责从零生成网站。提供可执行的 deploy.py 脚本（整站增量上传 / 单文件上传 / 仅启用 Pages 三种模式），纯标准库无额外依赖，逐文件增量上传、绝不覆盖远程已有内容，并已回写真实踩坑（token 写权限、连接器只读、force 覆盖风险）。仅适用于纯静态内容；涉及后端、数据库、登录或敏感数据时不要用。",
+      "grade": "adapt",
+      "reason": "带 1 个脚本(scripts/deploy.py), 要改写成 Colony 能跑的",
+      "source": "https://clawhub.ai/gypalyson-creator/skills/github-pages-publish",
+      "meta": {
+        "name": "github-pages-publish",
+        "display_name": "静态网页发布器",
+        "description": "把「已有的」静态网页文件（单个 HTML 或整个网站目录）安全发布到 GitHub Pages，生成可公开访问、能分享的网址链接。当用户已有现成网页，想「发到网上」「部署上线」「发布网页」「生成分享链接」时使用；本技能只做「发布已有文件」，不负责从零生成网站。提供可执行的 deploy.py 脚本（整站增量上传 / 单文件上传 / 仅启用 Pages 三种模式），纯标准库无额外依赖，逐文件增量上传、绝不覆盖远程已有内容，并已回写真实踩坑（token 写权限、连接器只读、force 覆盖风险）。仅适用于纯静态内容；涉及后端、数据库、登录或敏感数据时不要用。",
+        "agent_created": "true"
+      },
+      "at": 1793990459305,
+      "adapted": "# 静态网页发布到 GitHub Pages\n\n把已做好的纯静态网页(HTML/CSS/JS)发布成公开链接。适用:个人页、项目介绍、文档站、汇报页。何时用:用户说「把这个网页/文件夹发到网上、生成能分享的链接」。\n\n**不适用(先提醒)**:需要后端/数据库/登录 → 改用别的托管;含敏感数据 → Pages 免费版全网公开,禁放。\n\n## 前置检查\n1. 站点根必须有 `index.html`(否则 404)。\n2. 确认仓库名与分支(URL 规则):\n   - 用户主页:仓库名必须 `<owner>.github.io`,分支 `main`,地址 `https://<owner>.github.io`\n   - 项目页:任意 `repo`,分支 `gh-pages`,地址 `https://<owner>.github.io/<repo>`\n3. 有构建步骤(Hugo/Vite 等)→ 需 GitHub Actions(见文末);无构建 → 直接托管。\n\n## 第一步:拿到文件内容\nColony 没本机文件系统,按来源取内容,拼成 `{远程路径: 内容字符串}` 清单:\n- 来自 Colony 小应用:`apps.list` 找到 → `apps.get` 读 `code`(整份 HTML)。\n- 来自次元口袋:`data.list` 看键 → `data.get` 取。\n- 用户直接给的 HTML 文本:直接用。\n文本文件直接放字符串;二进制(图片等)需放其 base64,见脚本注释。远程文件名用英文,避免中文被 URL 编码。\n\n## 第二步:认证(PAT)\n本机 token 环境不存在,向用户要一个 PAT,并讲清权限(否则上传 403):\n- **classic**(`ghp_`):勾 `repo` 即可。\n- **fine-grained**(`github_pat_`):Permissions→Contents 设 **Read and write**,Repository access 覆盖目标仓库。\n获取地址 `https://github.com/settings/tokens`。token 只传进下面的 js.run 参数,不落盘。\n(可选)若已接 GitHub MCP:`plugin.mcp.list` 看,`plugin.mcp.call` 调 `create_repository`/`push_files`;一旦返回 403 `Resource not accessible by integration` 立即改走 PAT,别重试。\n\n## 第三步:用 js.run 调 GitHub REST API 全自动部署\n`js.run` 里 fetch 直打(GitHub API 支持 CORS)。若被跨域拦,把 `fetch` 换成 `await colony.call('browser.fetch',{url,method,headers,body})`。把 token/owner/repo/branch/files 作为常量传入:\n\n```js\nconst token='PAT', owner0='', repo='仓库名', branch='gh-pages';\nconst files={'index.html':'<!doctype html>...'}; // {路径:内容}, 二进制放base64并设 isB64[路径]=true\nconst A='https://api.github.com';\nconst H={Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json','User-Agent':'colony'};\nasync function req(m,p,b){const r=await fetch(A+p,{method:m,headers:H,body:b?JSON.stringify(b):undefined});let j={};try{j=await r.json()}catch(e){}return[r.status,j]}\nlet owner=owner0; if(!owner){const[,me]=await req('GET','/user');owner=me.login}\nlet[s]=await req('GET',`/repos/${owner}/${repo}`);\nif(s===404) await req('POST','/user/repos',{name:repo,private:false,auto_init:false});\nconst b64=t=>btoa(unescape(encodeURIComponent(t)));\nfor(const path in files){\n  const cp=`/repos/${owner}/${repo}/contents/${path}`;\n  const[gs,ex]=await req('GET',cp);\n  const pl={message:(gs===200?'Update ':'Add ')+path,content:(window.isB64&&window.isB64[path])?files[path]:b64(files[path]),branch};\n  if(gs===200)pl.sha=ex.sha;\n  const[us,ur]=await req('PUT',cp,pl);\n  if(us!==200&&us!==201)return{ok:false,path,status:us,resp:ur}; // 403=token缺写权限\n}\nlet[ps]=await req('GET',`/repos/${owner}/${repo}/pages`);\nif(ps!==200) await req('POST',`/repos/${owner}/${repo}/pages`,{build_type:'legacy',source:{branch,path:'/'}});\nlet built=null;\nfor(let i=0;i<36;i++){const[qs,q]=await req('GET',`/repos/${owner}/${repo}/pages`);if(qs===200&&q.status==='built'){built=q.html_url;break}await sleep(5000)}\nconst url=repo===owner+'.github.io'?`https://${owner}.github.io`:`https://${owner}.github.io/${repo}`;\nreturn{ok:true,owner,url,built};\n```\n原理(务必遵守):逐文件增量同步——只创建/更新清单里的文件,**绝不删除远程其他文件**,天然规避 force 覆盖丢数据。更新已有文件必须先 GET 取 `sha` 再 PUT,否则 422。\n\n## 第四步:验证与交付\n1. 轮询 `GET /repos/{owner}/{repo}/pages` 的 `status` 到 `built` 再验;首次部署需 1–3 分钟,刚启用可能 404。\n2. 访问 URL 验 200(js.run fetch 或 `browser.fetch`)。\n3. 把最终网址告诉用户,或用 `agent.attach` 贴一张带链接的卡片。\n4. **安全收尾**:提醒用户去 `https://github.com/settings/tokens` 撤销(Delete)临时 PAT。\n\n## 单文件追加变体(不覆盖现有 index.html)\n仓库已启用 Pages,只加一页:同第三步脚本但 `files` 只放一个英文名文件(如 `jiuzhaigou.html`),已有则带 sha 更新。地址 `https://<owner>.github.io/<repo>/<文件名>`。\n\n## 自动发布\n提交即自动发布:每次 PUT 新内容 GitHub 自动重建,无需额外配置。\n\n## 自定义域名(简)\n仓库根放 `CNAME` 文件(内容仅一行域名)→ DNS:子域加 CNAME 指 `<owner>.github.io`,裸域加 A 记录指 `185.199.108/109/110/111.153` → Settings→Pages 填域名并勾 Enforce HTTPS。CNAME 必须常驻。\n\n## 有构建步骤(Actions)\n启用改 `POST /pages {\"build_type\":\"workflow\"}`,并用脚本上传 `.github/workflows/pages.yml`(checkout→configure-pages→upload-pages-artifact(path 指产物目录,如 dist,前面插 npm ci/npm run build)→deploy-pages@v4)。\n\n## 常见问题\n- 刚部署 404:等 1–3 分钟;确认 public、index.html 在发布分支根。\n- 403 `Resource not accessible by integration`:MCP 只读,改 PAT。\n- 403 `...by personal access token`:PAT 缺写权限(fine-grained 设 Contents=Read and write,或 classic 勾 repo)。\n- 更新不生效:浏览器/CDN 缓存,强刷;确认改的是发布分支。\n- 私有仓库:免费版不支持 Pages,需付费订阅。\n- 项目页 URL 含仓库名,路径区分大小写。",
+      "adaptedBy": "默认模型",
+      "cost": {
+        "入": 17509,
+        "出": 7174
+      },
+      "truncated": false,
+      "adaptedAt": 1793122892878
+    }
+  ],
+  "mcp": []
+}
