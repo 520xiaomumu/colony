@@ -6,6 +6,7 @@
 - 发布包：[release-2026-11-07](release-2026-11-07/)（最新，含拆开的源码、本机脚本、浏览器插件、技能） · [release-2026-10-31](release-2026-10-31/)（含小应用、工作流） · [release-2026-10-24](release-2026-10-24/)
 - 根目录的 [`colony.html`](colony.html) 是 10-31 版，留作旧版入口
 - 视频介绍：B 站「Colony 小剧场」https://www.bilibili.com/video/BV1QLxF6pEQF
+- 开源协议：采用 MIT 协议，见 [LICENSE](LICENSE)
 
 ## Colony 的哲学（精简版）
 
