@@ -1,0 +1,211 @@
+{
+  "id": "grok",
+  "name": "Grok (网页)",
+  "desc": "复用 Chrome 登录态，支持 Grok 4.7 全模式对话、Imagine 批量超清生图/改图、并发批量生视频(480p/720p/1080p · 6/10/15s)、代理模式、照片库与会话历史查询，零本地服务、零黄条",
+  "origin": "https://grok.com",
+  "domain": "grok.com",
+  "authCookie": [
+    "sso",
+    "sso-rw"
+  ],
+  "models": [
+    "grok-4.7-auto",
+    "grok-4.7-fast",
+    "grok-4.7-expert",
+    "grok-4.7-build",
+    "grok-4.7-heavy",
+    "grok-imagine-image",
+    "grok-imagine-image-fast",
+    "grok-imagine-video"
+  ],
+  "defaultModel": "grok-4.7-fast",
+  "concurrency": 4,
+  "hints": {
+    "grok-imagine-video": "video",
+    "grok-4.7-fast": "chat",
+    "grok-imagine-image-fast": "image",
+    "grok-4.7-heavy": "chat",
+    "grok-4.7-expert": "chat",
+    "grok-4.7-auto": "chat",
+    "grok-imagine-image": "image",
+    "grok-4.7-build": "chat"
+  },
+  "modelOf": {
+    "image": "grok-imagine-image",
+    "video": "grok-imagine-video",
+    "imageEdit": "grok-imagine-image",
+    "chat": "grok-4.7-fast"
+  },
+  "capabilities": {
+    "act": [
+      "Grok 4.7 对话 5 模式(Auto/Fast/Expert/Build/Heavy)与私密聊天防误关",
+      "Imagine 图片模式：双引擎(质量 2.0/速度)、×2/×4/×8/×12 批量出图、9 档宽高比、参考图编辑",
+      "Imagine 视频模式：单个与多提示词并发批量生成、480p/720p/1080p、6s/10s/15s、6 档比例、音频开关与首帧参考图",
+      "Imagine 代理模式与 16 个官方模板入口(/imagine/template/*)",
+      "Base UI 菜单严格按可见节点筛选，杜绝残留 DOM 串台"
+    ],
+    "model": [
+      "grok-4.7-auto",
+      "grok-4.7-fast",
+      "grok-4.7-expert",
+      "grok-4.7-build",
+      "grok-4.7-heavy",
+      "grok-imagine-image",
+      "grok-imagine-image-fast",
+      "grok-imagine-video"
+    ],
+    "observe": [
+      "订阅与 5 模式实时配额",
+      "照片库资产列表(图/视频)与历史会话列表",
+      "聊天页与 Imagine 页面控件状态"
+    ],
+    "wait": [
+      "SPA 水合 MutationObserver 等待",
+      "对话完成稳定判定",
+      "三阶段超清成图判定与视频 DOM+资产库双轨判定"
+    ],
+    "collect": [
+      "聊天正文与近期会话列表(/rest/app-chat/conversations)",
+      "批量 1408px 超清原图提取(过滤 256px 噪点与光晕节点)",
+      "MP4 视频直下(assets.grok.com 无 CF 挑战，fetchMedia 秒下)与资产库双轨监测(/rest/assets)",
+      "订阅与 5 模式实时配额(/rest/subscriptions, /rest/rate-limits)"
+    ],
+    "safety": [
+      "仅操作折叠🤖静默后台页，不干扰前台标签页",
+      "不修改 Cloudflare 风控 Cookie",
+      "grok.com/rest/* 统一走静默页同源 fetch 避免 403 CF 挑战；assets.grok.com 直走 fetchMedia",
+      "不点击系统文件选择弹窗，改用 MAIN 世界 DataTransfer 粘贴参考图"
+    ]
+  },
+  "skills": [
+    {
+      "when": "要通过 Grok 网页版聊天、深度推理、写代码、查 Pro 配额或检索历史会话时",
+      "steps": [
+        "1. 网页版对话底层为 Grok 4.7，下拉菜单(#model-select-trigger)含 5 模式：Auto(50/2h)、Fast(140/2h)、Expert(40/2h)、Build(10/2h)、Heavy(40/2h)。",
+        "2. 重要规律：所有 grok.com/rest/* 接口(配额 /rest/rate-limits、订阅 /rest/subscriptions、照片库 /rest/assets、历史 /rest/app-chat/conversations)从扩展后台直调必遭 Cloudflare 403 挑战，必须走静默后台页同源 fetch。",
+        "3. 对话默认开启私密模式且防误关(private:false 可留历史)；内置支持 docx/pdf/pptx/xlsx 等技能；查历史用 action:\"conversations\"，查配额用 action:\"quota\"。"
+      ],
+      "name": "Grok 4.7 网页对话 5 模式、历史与实时配额"
+    },
+    {
+      "name": "Grok Imagine 批量超清图片生成与改图",
+      "steps": [
+        "1. 入口 https://grok.com/imagine，双引擎：质量 2.0(grok-imagine-image，默认) 与 速度(grok-imagine-image-fast / engine:\"speed\")；单张标准出图默认自动切至「×2」档位(比默认 ×4 更轻更快)，显式传 count 可按需切 ×4/×8/×12/auto。",
+        "2. 批量出图调 plugin.web.act {id:\"grok\", action:\"image\", args:{prompt, count:6, ratio:\"1:1\", engine:\"quality\"}}：自动选最小覆盖档位(×2/×4/×8/×12)或自动分批提取 1408×1408 原图。",
+        "3. 宽高比 9 档：自动模式 / 2:3 / 3:2 / 4:3 / 1:1 / 9:16 / 16:9 / 21:9 / 5:2；传 images/image 自动走 MAIN 世界粘贴参考图改图。",
+        "4. 渐进渲染过滤：页面先出 <280KB 的低清渐进 data:image 预览再替换为 ~1MB EXIF 原图；插件强制等待达标尺寸并按 DOM 顺序锁定首个就绪高清图(不每轮按字节重排)，避免多图交替刷新导致稳定计数归零拖慢耗时。"
+      ],
+      "when": "要用 Grok Imagine 生成单张/多张高清图片或改图，精准控制画质引擎、数量和比例时"
+    },
+    {
+      "when": "要用 Grok Imagine 生成单个或批量视频(文生视频/图生视频)时",
+      "name": "Grok Imagine 单个与批量并发视频生成",
+      "steps": [
+        "1. 批量并发生成视频调 plugin.web.act {id:\"grok\", action:\"video\", args:{prompts:[\"场景1\",\"场景2\",\"场景3\"], resolution:\"480p\", duration:6, ratio:\"16:9\", audio:true}}，或单提示词配 count:3；自动 4 并发跑完所有视频且带局部容错。",
+        "2. 参数全覆盖：分辨率 480p/720p/1080p，时长 6s/10s/15s(菜单项为 6s/10s/15s)，宽高比 auto/2:3/3:2/1:1/9:16/16:9，音频开关(audio:true/false)，支持传 image 做图生视频。",
+        "3. 双轨监测与下载：提交后跳至 /imagine/post/<postId>，同时监测页面 <video> 与 /rest/assets 新增 mp4 资产，480p 6s 实测约 20~30 秒出片；assets.grok.com 无 CF 挑战，直接 fetchMedia 秒下。"
+      ]
+    },
+    {
+      "name": "Grok 照片库资产查询与代理模式/模板",
+      "when": "要回看/下载 Grok 照片库历史产出，或调用 Imagine 代理模式与官方模板时",
+      "steps": [
+        "1. 调 plugin.web.act {id:\"grok\", action:\"library\", args:{type:\"video\", limit:10, download:true, assetIds:[...]}} 可随时查询并直下最近生成过的图片/视频资产，免重复生成。",
+        "2. Imagine 代理模式(action:\"imagine_agent\")用于高层创意任务；官网另含 16 个官方模板(/imagine/template/imagine-collage、imagine-icon-maker、imagine-photo-edit、imagine-background-removal 等)。"
+      ]
+    },
+    {
+      "when": "维护、排查或扩展 Grok 网页插件时",
+      "name": "Grok 网页自动化避坑规范",
+      "steps": [
+        "1. 零黄条：bgTab 折叠 🤖 后台组 + chrome.userScripts.execute(world:\"MAIN\")，不挂 CDP、不碰 CF Cookie；高并发打开 imagine 页时 readyExpr 超时需放宽至 40s 防冷启动误超时。",
+        "2. Base UI 菜单残留 DOM：已关闭菜单的选项仍留在 DOM 中，必须走 tools.pickMenu 可见性过滤防串台误点。",
+        "3. 渐进图片防抢跑与防抖：Grok Imagine 4/2 张图同时渐进流式更新，必须过滤 <280KB 的低清 data:image 模糊过渡帧，且按 DOM 顺序锁定目标图(不要每轮按字节大小重排，否则 stable 反复归零会多等 1 分钟以上)。",
+        "4. 富文本输入与视频检测：TipTap/ProseMirror 走 tools.fillEditor / pasteImages；视频不用全文正则搜百分比，改用 <video> 稳定 + /rest/assets 增量 ID 双轨判定。"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "name": "quota",
+      "desc": "查询账号订阅等级与 5 个对话模式的实时剩余配额(走静默页同源 fetch 绕过 CF 挑战)",
+      "params": {}
+    },
+    {
+      "name": "library",
+      "desc": "查询 Grok 照片库/资产库最近生成的图片与视频列表，支持按类型过滤或直接下载返回",
+      "params": {
+        "assetIds": "array?",
+        "download": "boolean?",
+        "assetId": "string?",
+        "downloadCount": "number?",
+        "type": "image|video?",
+        "limit": "number?"
+      }
+    },
+    {
+      "name": "conversations",
+      "desc": "查询近期 Grok 网页版聊天会话历史列表与链接",
+      "params": {
+        "limit": "number?"
+      }
+    },
+    {
+      "desc": "观察聊天页或 Imagine 页当前状态、控件与实时配额",
+      "params": {
+        "detail": "boolean?",
+        "page": "chat|imagine?"
+      },
+      "name": "observe"
+    },
+    {
+      "name": "chat",
+      "desc": "在 Grok 4.7 网页发起对话，支持 5 模式切换、私密开关与参考图",
+      "params": {
+        "prompt": "string",
+        "images": "array?",
+        "mode": "Auto|Fast|Expert|Build|Heavy?",
+        "private": "boolean?"
+      }
+    },
+    {
+      "desc": "在 Grok Imagine 批量生成或编辑超清图片，支持任意数量(×2/×4/×8/×12 自动选档或分批)、双引擎与 9 档比例",
+      "name": "image",
+      "params": {
+        "prompt": "string",
+        "images": "array?",
+        "ratio": "auto|2:3|3:2|4:3|1:1|9:16|16:9|21:9|5:2?",
+        "engine": "quality|speed?",
+        "count": "number|auto?"
+      }
+    },
+    {
+      "desc": "在 Grok Imagine 单个或批量并发生成视频(支持文生视频/图生视频、480p/720p/1080p、6/10/15s、6 档比例、音频开关)",
+      "params": {
+        "prompt": "string?",
+        "ratio": "auto|2:3|3:2|1:1|9:16|16:9?",
+        "duration": "6|10|15?",
+        "prompts": "array?",
+        "audio": "boolean?",
+        "count": "number?",
+        "resolution": "480p|720p|1080p?",
+        "image": "string?"
+      },
+      "name": "video"
+    },
+    {
+      "name": "imagine_agent",
+      "params": {
+        "prompt": "string",
+        "images": "array?",
+        "timeout": "number?"
+      },
+      "desc": "在 Grok Imagine 代理模式提交高层创意任务并等待返回文字与媒体"
+    }
+  ],
+  "runCode": "const prompt = String(args.prompt || '').trim();\nif (!prompt) throw new Error('需要 prompt');\nconst isVideo = kind === 'video' || kind === 'videoEdit';\nconst isFastImg = /fast|speed/i.test(String(args.model || args.engine || ''));\nconst mapRatio = (ratio, size, forVideo) => {\n  const s = String(ratio || '').trim();\n  const allowed = forVideo ? ['2:3','3:2','1:1','9:16','16:9'] : ['2:3','3:2','4:3','1:1','9:16','16:9','21:9','5:2'];\n  if (/auto|自动/i.test(s)) return '自动模式';\n  if (allowed.includes(s)) return s;\n  const m = /^(\\d+)\\s*[xX×:]\\s*(\\d+)$/.exec(String(size || s));\n  if (!m) return '';\n  const r = +m[1] / +m[2];\n  return r >= 2.3 && allowed.includes('5:2') ? '5:2' : r >= 2.0 && allowed.includes('21:9') ? '21:9' : r >= 1.65 ? '16:9' : r >= 1.42 ? '3:2' : r >= 1.2 && allowed.includes('4:3') ? '4:3' : r >= 0.85 ? '1:1' : r >= 0.62 ? '2:3' : '9:16';\n};\nconst ratioTarget = mapRatio(args.ratio, args.size, isVideo);\nconst resTarget = isVideo && args.resolution ? (/1080/.test(String(args.resolution)) ? '1080p' : /720/.test(String(args.resolution)) ? '720p' : '480p') : '';\nconst durNum = isVideo && args.duration ? (+args.duration >= 13 ? '15' : +args.duration >= 8 ? '10' : '6') : '';\nconst audioTarget = isVideo && args.audio !== undefined ? !!args.audio : null;\nconst countTarget = !isVideo ? (args.count ? (/auto|自动/i.test(String(args.count)) ? '自动模式' : '×' + String(args.count).replace(/[^\\d]/g, '')) : '×2') : '';\nconst refImages = [].concat(args.images || args.image || []).filter(Boolean);\n\nreturn tools.openTab('https://grok.com/imagine', async tabId => {\n  const [domBefore, assetBefore] = await Promise.all([\n    tools.runPage(tabId, `(() => {\n      const fp = s => s ? s.slice(0, 160) + '#' + s.length : '';\n      return {\n        imgs: [...document.querySelectorAll('img')].map(i => fp(i.currentSrc || i.src)).filter(Boolean),\n        vids: [...document.querySelectorAll('video,video source')].map(v => v.currentSrc || v.src || '').filter(Boolean),\n      };\n    })()`, 10000, 'MAIN'),\n    isVideo ? tools.fetchInTab(tabId, '/rest/assets?pageSize=8&orderBy=ORDER_BY_CREATE_TIME&sortDirection=SORT_DIRECTION_DESCENDING&source=SOURCE_ANY&isLatest=true&includeImagineFiles=true').catch(() => null) : null,\n  ]);\n  const oldIds = (assetBefore?.json?.assets || []).map(x => x.assetId);\n\n  await tools.runPage(tabId, `(async (isVideo, isFastImg, audioTarget) => {\n    const sleep = ms => new Promise(r => setTimeout(r, ms));\n    const vis = e => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1 && getComputedStyle(e).visibility !== 'hidden'; };\n    const modeBtn = document.querySelector(isVideo ? 'button[aria-label=\"视频\"],button[aria-label=\"Video\"]' : 'button[aria-label=\"图片\"],button[aria-label=\"Image\"]');\n    if (modeBtn && modeBtn.getAttribute('aria-pressed') !== 'true') { modeBtn.click(); await sleep(350); }\n    if (isVideo && audioTarget !== null) {\n      const ab = document.querySelector('button[aria-label=\"视频音频\"],button[aria-label*=\"Audio\"]');\n      if (ab && (ab.getAttribute('aria-pressed') === 'true') !== audioTarget) { ab.click(); await sleep(200); }\n    } else if (!isVideo) {\n      const want = isFastImg ? '速度' : '质量';\n      const eb = [...document.querySelectorAll('button')].find(b => vis(b) && (b.innerText || '').trim().startsWith(want));\n      if (eb && eb.getAttribute('aria-pressed') !== 'true') { eb.click(); await sleep(220); }\n    }\n  })(${JSON.stringify(isVideo)}, ${JSON.stringify(isFastImg)}, ${JSON.stringify(audioTarget)})`, 12000, 'MAIN');\n\n  if (isVideo) {\n    if (resTarget) await tools.pickMenu(tabId, 'button[aria-label=\"视频分辨率\"]', resTarget);\n    if (durNum) await tools.pickMenu(tabId, 'button[aria-label=\"视频时长\"]', durNum + 's');\n    if (ratioTarget) await tools.pickMenu(tabId, 'button[aria-label=\"宽高比\"]', ratioTarget);\n  } else {\n    if (countTarget) await tools.pickMenu(tabId, 'button[aria-label=\"图像数量\"]', countTarget);\n    if (ratioTarget) await tools.pickMenu(tabId, 'button[aria-label=\"宽高比\"]', ratioTarget);\n  }\n\n  if (refImages.length) {\n    const pasted = await tools.pasteImages(tabId, refImages, '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', 'button[aria-label=\"Remove image\"],button[aria-label*=\"移除\"],form img[src^=\"blob:\"]');\n    if (!pasted) throw new Error('Grok 参考图上传失败，未检测到已附加图片预览');\n    await tools.sleep(1000);\n  }\n  await tools.fillEditor(tabId, prompt, { selector: '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', submit: true });\n\n  const oldI = domBefore?.imgs || [], oldV = domBefore?.vids || [];\n  const t0 = Date.now(), maxMs = isVideo ? 120000 : 100000;\n  let picked = null, firstReadyAt = 0, lastLen = 0, stable = 0, seenVidAt = 0, lastVidUrl = '';\n  for (let step = 0; Date.now() - t0 < maxMs; step++) {\n    if (args.signal?.aborted) throw new Error('已取消');\n    await tools.sleep(isVideo ? 1800 : 1200);\n    if (isVideo) {\n      const st = await tools.runPage(tabId, `((oldVids) => {\n        const oldSet = new Set(oldVids || []);\n        const idx = location.href.indexOf('/imagine/post/');\n        const postId = idx >= 0 ? location.href.slice(idx + 14).split(/[/?#]/)[0] : '';\n        const vids = [...new Set([...document.querySelectorAll('video,video source')].map(v => v.currentSrc || v.src || '').filter(u => u && !oldSet.has(u) && (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:'))))];\n        return { postId, vids };\n      })(${JSON.stringify(oldV)})`, 10000, 'MAIN').catch(() => null);\n      if (!st) continue;\n      const exact = st.postId && st.vids.find(u => u.includes(st.postId));\n      if (exact) { picked = { type: 'video', url: exact }; break; }\n      let assetUrl = '';\n      if (step % 2 === 1 && st.postId) {\n        const ar = await tools.fetchInTab(tabId, '/rest/assets?pageSize=8&orderBy=ORDER_BY_CREATE_TIME&sortDirection=SORT_DIRECTION_DESCENDING&source=SOURCE_ANY&isLatest=true&includeImagineFiles=true').catch(() => null);\n        const newVids = (ar?.json?.assets || []).filter(x => x.mimeType === 'video/mp4' && !oldIds.includes(x.assetId));\n        const hit = newVids.find(x => x.assetId === st.postId) || (refImages.length && newVids.length === 1 && Date.now() - t0 > 30000 ? newVids[0] : null);\n        if (hit?.key) assetUrl = 'https://assets.grok.com/' + hit.key;\n      }\n      if (assetUrl) { picked = { type: 'video', url: assetUrl }; break; }\n      if (st.vids.length) {\n        if (!seenVidAt) { seenVidAt = Date.now(); lastVidUrl = st.vids[0]; }\n        if (Date.now() - seenVidAt >= 4000) { picked = { type: 'video', url: st.vids[0] || lastVidUrl }; break; }\n      }\n      continue;\n    }\n    const snap = await tools.runPage(tabId, `((oldImgs) => {\n      const fp = s => s ? s.slice(0, 160) + '#' + s.length : '';\n      const oldSet = new Set(oldImgs || []);\n      const list = [...document.querySelectorAll('img')].map((i, idx) => {\n        const u = i.currentSrc || i.src || '', alt = (i.alt || '').trim();\n        const ok = !!(u && !oldSet.has(fp(u)) && i.complete && Math.max(i.naturalWidth, i.naturalHeight) >= 512 && alt !== '生成的图像' && !alt.toLowerCase().startsWith('generating') && (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:image/')) && !/avatar|icon|logo|cookielaw|profile-picture/i.test(u));\n        return ok ? { idx, isData: u.startsWith('data:'), url: u.startsWith('data:') ? '' : u, w: i.naturalWidth, h: i.naturalHeight, len: u.length } : null;\n      }).filter(Boolean);\n      const hi = list.find(x => !x.isData || x.len >= 280000);\n      const pick = hi || list.sort((a, b) => (b.w * b.h) - (a.w * a.h) || b.len - a.len)[0];\n      return pick ? Object.assign({ type: 'image' }, pick) : null;\n    })(${JSON.stringify(oldI)})`, 10000, 'MAIN').catch(() => null);\n    if (!snap) continue;\n    picked = snap;\n    if (!firstReadyAt) firstReadyAt = Date.now();\n    if (snap.len === lastLen) stable++; else { stable = 0; lastLen = snap.len; }\n    if (((!snap.isData || snap.len >= 280000) && stable >= 1) || (snap.isData && snap.len < 280000 ? (stable >= 14 || Date.now() - firstReadyAt >= 26000) : (stable >= 3 || Date.now() - firstReadyAt >= 12000))) break;\n  }\n  if (!picked) throw new Error('等待 Grok Imagine 生成超时，未检测到新媒体');\n  if (picked.type === 'image' && picked.isData) {\n    const src = await tools.runPage(tabId, `(() => { const i = document.querySelectorAll('img')[${picked.idx}]; return i ? (i.currentSrc || i.src || '') : ''; })()`, 20000, 'MAIN');\n    const m = /^data:([^;,]+);base64,(.+)$/.exec(src || '');\n    if (m) return { mimeType: m[1], data: m[2] };\n    throw new Error('提取生成图 dataUrl 失败');\n  }\n  return picked.url.startsWith('http')\n    ? tools.fetchMedia(picked.url, isVideo ? 'video/mp4' : 'image/jpeg').catch(() => tools.blobFromTab(tabId, picked.url, isVideo ? 'video/mp4' : 'image/jpeg'))\n    : tools.blobFromTab(tabId, picked.url, isVideo ? 'video/mp4' : 'image/jpeg');\n}, { readyExpr: `document.querySelector('button[aria-label=\"图片\"],button[aria-label=\"视频\"],button[aria-label=\"Image\"]')`, signal: args.signal, timeout: 40000, world: 'MAIN' });",
+  "chatCode": "const msgs = Array.isArray(args.messages) ? args.messages : [];\nconst sys = msgs.filter(m => m.role === 'system').map(m => tools.textOf(m.content)).filter(Boolean).join('\\n');\nconst hist = msgs.filter(m => m.role !== 'system');\nconst last = hist[hist.length - 1];\nconst prompt = (sys ? `[System]\\n${sys}\\n\\n` : '') + (hist.length > 1\n  ? hist.map(m => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${tools.textOf(m.content)}`).join('\\n\\n')\n  : tools.textOf(last?.content || args.prompt || ''));\nif (!prompt.trim()) throw new Error('对话内容为空');\nconst imgs = Array.isArray(last?.content) ? last.content.filter(p => p && p.type === 'image' && (p.data || p.url)) : [];\nconst m = String(args.model || '').toLowerCase();\nconst targetMode = /heavy|420/.test(m) ? 'Heavy' : /build/.test(m) ? 'Build' : /expert|grok-4(?!-auto)/.test(m) ? 'Expert' : /fast|grok-3/.test(m) ? 'Fast' : 'Auto';\nconst usePrivate = args.private !== false;\n\nreturn tools.openTab('https://grok.com/', async tabId => {\n  await tools.runPage(tabId, `(async (priv) => {\n    const txt = document.body?.innerText || '';\n    const pb = document.querySelector('button[aria-label*=\"私密\"],button[aria-label*=\"Private\"]');\n    const isPriv = txt.includes('此聊天不会出现在你的历史记录中') || txt.includes(\"won't appear in your history\")\n      || !!(pb && (pb.getAttribute('aria-pressed') === 'true' || /退出|离开|Exit|Leave/i.test(pb.getAttribute('aria-label') || '')));\n    if (isPriv !== priv && pb) { pb.click(); await new Promise(r => setTimeout(r, 320)); }\n  })(${JSON.stringify(usePrivate)})`, 10000, 'MAIN');\n  await tools.pickMenu(tabId, '#model-select-trigger,button[aria-label^=\"型号:\"],button[aria-label^=\"Model:\"]', targetMode);\n  if (imgs.length) { await tools.pasteImages(tabId, imgs, '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]'); await tools.sleep(900); }\n  await tools.fillEditor(tabId, prompt, { selector: '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', submit: true });\n\n  const content = await tools.runPage(tabId, `(async () => {\n    const sleep = ms => new Promise(r => setTimeout(r, ms));\n    let prev = '', stable = 0, t0 = Date.now();\n    while (Date.now() - t0 < 150000) {\n      await sleep(600);\n      const stopBtn = document.querySelector('button[aria-label*=\"停止\"],button[aria-label*=\"Stop\"]');\n      const mds = [...document.querySelectorAll('.response-content-markdown')].filter(n => !n.closest('form') && !n.closest('aside'));\n      const last = mds.length ? (mds[mds.length - 1].innerText || '').trim() : '';\n      const done = (document.body.innerText || '').includes('Grok 已完成回复') || (document.body.innerText || '').includes('Grok finished');\n      if (last && !stopBtn) {\n        if (done && last === prev) return last;\n        if (last === prev) { if (++stable >= 3) return last; } else { stable = 0; prev = last; }\n      } else { stable = 0; if (last) prev = last; }\n    }\n    return prev;\n  })()`, 160000, 'MAIN');\n  if (!content) throw new Error('未获取到 Grok 网页回复，请确认已登录且未触发配额限制');\n  return { content, usage: null, stop: 'stop', toolCalls: null };\n}, { readyExpr: `document.querySelector('#model-select-trigger,button[aria-label^=\"型号:\"],button[aria-label^=\"Model:\"]') && document.querySelector('.ProseMirror,[role=\"textbox\"]')`, signal: args.signal, timeout: 25000, world: 'MAIN' });",
+  "observeCode": "const page = String(args.page || 'imagine').toLowerCase();\nconst url = page === 'chat' ? 'https://grok.com/' : 'https://grok.com/imagine';\nconst readyExpr = page === 'chat'\n  ? `document.querySelector('#model-select-trigger,button[aria-label^=\"型号:\"],button[aria-label^=\"Model:\"]') && document.querySelector('.ProseMirror,[role=\"textbox\"]')`\n  : `document.querySelector('button[aria-label=\"图片\"],button[aria-label=\"视频\"],button[aria-label=\"Image\"]')`;\nreturn tools.openTab(url, async tabId => {\n  await tools.sleep(350);\n  const [snap, sub, fast, expert] = await Promise.all([\n    tools.observeTab(tabId, !!args.detail),\n    tools.fetchInTab(tabId, '/rest/subscriptions').catch(() => null),\n    tools.fetchInTab(tabId, '/rest/rate-limits', { method: 'POST', body: { modelName: 'grok-3', requestKind: 'DEFAULT' } }).catch(() => null),\n    tools.fetchInTab(tabId, '/rest/rate-limits', { method: 'POST', body: { modelName: 'grok-4', requestKind: 'DEFAULT' } }).catch(() => null),\n  ]);\n  return Object.assign(snap || {}, {\n    subscription: sub?.json?.subscriptions?.[0]?.tier || 'unknown',\n    quota: { fast: fast?.json || null, expert: expert?.json || null },\n  });\n}, { readyExpr, timeout: 25000, world: 'MAIN' });",
+  "actionCode": "const act = String(args.action || kind || 'observe');\nconst a = Object.assign({}, args, args.args || {});\nconst normRatio = (ratio, size, forVideo) => {\n  const s = String(ratio || '').trim();\n  const allowed = forVideo ? ['2:3','3:2','1:1','9:16','16:9'] : ['2:3','3:2','4:3','1:1','9:16','16:9','21:9','5:2'];\n  if (/auto|自动/i.test(s)) return '自动模式';\n  if (allowed.includes(s)) return s;\n  const m = /^(\\d+)\\s*[xX×:]\\s*(\\d+)$/.exec(String(size || s));\n  if (!m) return '';\n  const r = +m[1] / +m[2];\n  return r >= 2.3 && allowed.includes('5:2') ? '5:2' : r >= 2.0 && allowed.includes('21:9') ? '21:9' : r >= 1.65 ? '16:9' : r >= 1.42 ? '3:2' : r >= 1.2 && allowed.includes('4:3') ? '4:3' : r >= 0.85 ? '1:1' : r >= 0.62 ? '2:3' : '9:16';\n};\n\nif (act === 'quota' || act === 'limits') {\n  const map = { auto: 'grok-4-auto', fast: 'grok-3', expert: 'grok-4', build: 'build', heavy: 'grok-420' };\n  return tools.openTab('https://grok.com/', async tabId => {\n    const [sub, ...lims] = await Promise.all([\n      tools.fetchInTab(tabId, '/rest/subscriptions').catch(() => null),\n      ...Object.entries(map).map(([mode, bucket]) =>\n        tools.fetchInTab(tabId, '/rest/rate-limits', { method: 'POST', body: { modelName: bucket, requestKind: 'DEFAULT' } })\n          .then(r => [mode, r?.json ? { bucket, remaining: r.json.remainingQueries, total: r.json.totalQueries, windowHours: r.json.windowSizeSeconds ? +(r.json.windowSizeSeconds / 3600).toFixed(2) : null } : { bucket, status: r?.status }])\n          .catch(e => [mode, { bucket, error: e.message }])\n      ),\n    ]);\n    return { subscription: sub?.json?.subscriptions?.[0]?.tier || 'unknown', modes: Object.fromEntries(lims) };\n  }, { readyExpr: `document.readyState !== 'loading'`, timeout: 20000, world: 'MAIN' });\n}\n\nif (act === 'library' || act === 'assets') {\n  const limit = Math.max(1, Math.min(50, Number(a.limit) || 12));\n  const mimeFilter = String(a.type || a.mime || '').toLowerCase();\n  const r = await tools.openTab('https://grok.com/', tabId =>\n    tools.fetchInTab(tabId, '/rest/assets?pageSize=' + limit + '&orderBy=ORDER_BY_CREATE_TIME&sortDirection=SORT_DIRECTION_DESCENDING&source=SOURCE_ANY&isLatest=true&includeImagineFiles=true'),\n    { readyExpr: `document.readyState !== 'loading'`, timeout: 20000, world: 'MAIN' });\n  if (!r?.ok || !r.json) throw new Error('拉取照片库失败: HTTP ' + (r?.status || '?'));\n  const list = (r.json.assets || []).map(x => ({\n    id: x.assetId, mimeType: x.mimeType, name: x.name, sizeBytes: x.sizeBytes, createTime: x.createTime,\n    url: x.key ? 'https://assets.grok.com/' + x.key : '',\n  })).filter(x => !mimeFilter || (x.mimeType || '').toLowerCase().includes(mimeFilter));\n  if (a.download) {\n    const ids = Array.isArray(a.assetIds) ? a.assetIds : (a.assetId ? [a.assetId] : null);\n    const pick = ids ? ids.map(id => list.find(x => x.id === id)).filter(Boolean) : list.slice(0, Math.min(6, Number(a.downloadCount) || 1));\n    const files = await Promise.all(pick.map(async x => Object.assign({ id: x.id, name: x.name, sizeBytes: x.sizeBytes, url: x.url }, await tools.fetchMedia(x.url, x.mimeType || 'application/octet-stream'))));\n    return { total: list.length, files };\n  }\n  return { total: list.length, assets: list };\n}\n\nif (act === 'conversations' || act === 'history') {\n  const limit = Math.max(1, Math.min(50, Number(a.limit) || 15));\n  const r = await tools.openTab('https://grok.com/', tabId =>\n    tools.fetchInTab(tabId, '/rest/app-chat/conversations?pageSize=' + limit),\n    { readyExpr: `document.readyState !== 'loading'`, timeout: 20000, world: 'MAIN' });\n  if (!r?.ok || !r.json) throw new Error('拉取会话历史失败: HTTP ' + (r?.status || '?'));\n  return (r.json.conversations || []).map(c => ({ id: c.conversationId, title: c.title, starred: !!c.starred, createTime: c.createTime, modifyTime: c.modifyTime, url: 'https://grok.com/c/' + c.conversationId }));\n}\n\nif (act === 'observe') return ctx.call('plugin.web.observe', { id: 'grok', page: a.page || 'imagine', detail: !!a.detail });\n\nif (act === 'chat') {\n  const modeMap = { auto: 'grok-4.7-auto', fast: 'grok-4.7-fast', expert: 'grok-4.7-expert', build: 'grok-4.7-build', heavy: 'grok-4.7-heavy' };\n  const model = a.model || modeMap[String(a.mode || 'fast').toLowerCase()] || 'grok-4.7-fast';\n  const msgs = a.messages || [{ role: 'user', content: a.images || a.image\n    ? [{ type: 'text', text: String(a.prompt || a.text || '') }, ...[].concat(a.images || a.image).map(im => typeof im === 'string' ? { type: 'image', url: im } : Object.assign({ type: 'image' }, im))]\n    : String(a.prompt || a.text || '') }];\n  return ctx.call('ai.chat', { provider: 'Grok (网页)', model, messages: msgs, private: a.private });\n}\n\nif (act === 'image' || act === 'imageEdit') {\n  const prompt = String(a.prompt || '').trim();\n  if (!prompt) throw new Error('image 需要 prompt');\n  const isAuto = /auto|自动/i.test(String(a.count || ''));\n  const want = isAuto ? 2 : Math.max(1, Math.min(24, parseInt(String(a.count || '1').replace(/[^\\d]/g, ''), 10) || 1));\n  if (want === 1 && !a.returnAll && !isAuto) {\n    return ctx.call(act === 'imageEdit' || a.image || a.images ? 'ai.imageEdit' : 'ai.image', {\n      provider: 'Grok (网页)', model: String(a.engine || '').toLowerCase() === 'speed' ? 'grok-imagine-image-fast' : (a.model || 'grok-imagine-image'),\n      prompt, image: a.image, images: a.images, size: a.size, ratio: a.ratio, count: a.count || 2, engine: a.engine,\n    });\n  }\n  const isFast = /fast|speed/i.test(String(a.model || a.engine || ''));\n  const ratioTarget = normRatio(a.ratio, a.size, false);\n  const refImages = [].concat(a.images || a.image || []).filter(Boolean);\n\n  const runBatch = async (batchWant) => {\n    const tier = isAuto ? '自动模式' : (batchWant <= 2 ? '×2' : batchWant <= 4 ? '×4' : batchWant <= 8 ? '×8' : '×12');\n    return tools.openTab('https://grok.com/imagine', async tabId => {\n      const oldImgs = await tools.runPage(tabId, `(() => { const fp = s => s ? s.slice(0, 160) + '#' + s.length : ''; return [...document.querySelectorAll('img')].map(i => fp(i.currentSrc || i.src)).filter(Boolean); })()`, 10000, 'MAIN');\n      await tools.runPage(tabId, `(async (isFast) => {\n        const sleep = ms => new Promise(r => setTimeout(r, ms));\n        const vis = e => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1 && getComputedStyle(e).visibility !== 'hidden'; };\n        const mb = document.querySelector('button[aria-label=\"图片\"],button[aria-label=\"Image\"]');\n        if (mb && mb.getAttribute('aria-pressed') !== 'true') { mb.click(); await sleep(340); }\n        const eb = [...document.querySelectorAll('button')].find(b => vis(b) && (b.innerText || '').trim().startsWith(isFast ? '速度' : '质量'));\n        if (eb && eb.getAttribute('aria-pressed') !== 'true') { eb.click(); await sleep(220); }\n      })(${JSON.stringify(isFast)})`, 12000, 'MAIN');\n      await tools.pickMenu(tabId, 'button[aria-label=\"图像数量\"]', tier);\n      if (ratioTarget) await tools.pickMenu(tabId, 'button[aria-label=\"宽高比\"]', ratioTarget);\n      if (refImages.length) { const pasted = await tools.pasteImages(tabId, refImages, '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', 'button[aria-label=\"Remove image\"],button[aria-label*=\"移除\"],form img[src^=\"blob:\"]'); if (!pasted) throw new Error('Grok 批量参考图上传失败，未检测到预览'); await tools.sleep(1000); }\n      await tools.fillEditor(tabId, prompt, { selector: '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', submit: true });\n\n      const t0 = Date.now(), maxMs = 90000;\n      let picked = [], firstReadyAt = 0, lastSig = '', stable = 0, lastCountSig = '', countStable = 0;\n      while (Date.now() - t0 < maxMs) {\n        if (a.signal?.aborted) throw new Error('已取消');\n        await tools.sleep(1200);\n        const list = await tools.runPage(tabId, `((oldImgs) => {\n          const fp = s => s ? s.slice(0, 160) + '#' + s.length : '', oldSet = new Set(oldImgs || []), seen = new Set(), out = [];\n          document.querySelectorAll('img').forEach((i, idx) => {\n            const u = i.currentSrc || i.src || '', alt = (i.alt || '').trim();\n            if (!u || oldSet.has(fp(u)) || !i.complete || Math.max(i.naturalWidth, i.naturalHeight) < 512) return;\n            if (alt === '生成的图像' || alt.toLowerCase().startsWith('generating') || !(u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:image/')) || /avatar|icon|logo|cookielaw|profile-picture/i.test(u)) return;\n            const k = fp(u); if (seen.has(k)) return; seen.add(k);\n            out.push({ idx, isData: u.startsWith('data:'), url: u.startsWith('data:') ? '' : u, w: i.naturalWidth, h: i.naturalHeight, len: u.length });\n          });\n          return out;\n        })(${JSON.stringify(oldImgs || [])})`, 10000, 'MAIN').catch(() => []);\n        if (list.length >= batchWant) {\n          picked = list.slice(0, batchWant);\n          if (!firstReadyAt) firstReadyAt = Date.now();\n          const allHd = picked.every(x => !x.isData || x.len >= 280000);\n          const sig = picked.map(x => x.len + ':' + x.w).join(',');\n          if (sig === lastSig) stable++; else { stable = 0; lastSig = sig; }\n          if ((allHd && stable >= 1) || stable >= 3 || Date.now() - firstReadyAt >= 12000) break;\n        } else if (list.length > 0) {\n          const cs = list.length + ':' + list.map(x => x.len).join(',');\n          if (cs === lastCountSig) countStable++; else { countStable = 0; lastCountSig = cs; }\n          if (Date.now() - t0 > 24000 && countStable >= 4) { picked = list; break; }\n        }\n      }\n      if (!picked.length) throw new Error('等待 Grok Imagine 生成超时，未检测到高清新图');\n      const results = [];\n      for (const item of picked) {\n        if (item.isData) {\n          const src = await tools.runPage(tabId, `(() => { const i = document.querySelectorAll('img')[${item.idx}]; return i ? (i.currentSrc || i.src || '') : ''; })()`, 20000, 'MAIN');\n          const m = /^data:([^;,]+);base64,(.+)$/.exec(src || '');\n          if (m) results.push({ mimeType: m[1], data: m[2], width: item.w, height: item.h });\n        } else if (item.url) {\n          const media = item.url.startsWith('http')\n            ? await tools.fetchMedia(item.url, 'image/jpeg').catch(() => tools.blobFromTab(tabId, item.url, 'image/jpeg'))\n            : await tools.blobFromTab(tabId, item.url, 'image/jpeg');\n          results.push(Object.assign(media, { width: item.w, height: item.h }));\n        }\n      }\n      return results;\n    }, { readyExpr: `document.querySelector('button[aria-label=\"图片\"],button[aria-label=\"Image\"]')`, signal: a.signal, timeout: 40000, world: 'MAIN' });\n  };\n  const allImages = [];\n  for (let round = 0; round < 4 && allImages.length < want; round++) {\n    const batch = await runBatch(Math.min(12, want - allImages.length));\n    allImages.push(...batch);\n    if (!batch.length) break;\n  }\n  return { count: allImages.length, engine: isFast ? 'speed' : 'quality', ratio: ratioTarget || 'default', images: allImages.slice(0, want) };\n}\n\nif (act === 'video' || act === 'videos') {\n  const promptList = Array.isArray(a.prompts) && a.prompts.length\n    ? a.prompts.map(x => typeof x === 'string' ? { prompt: x } : x)\n    : Array.from({ length: Math.max(1, Math.min(8, parseInt(a.count, 10) || 1)) }, () => ({ prompt: String(a.prompt || '').trim(), image: a.image }));\n  if (!promptList.length || !promptList[0].prompt) throw new Error('video 需要 prompt 或 prompts 数组');\n  const resTarget = a.resolution ? (/1080/.test(String(a.resolution)) ? '1080p' : /720/.test(String(a.resolution)) ? '720p' : '480p') : '480p';\n  const durNum = a.duration ? (+a.duration >= 13 ? '15' : +a.duration >= 8 ? '10' : '6') : '6';\n  const ratioTarget = normRatio(a.ratio || '16:9', a.size, true);\n  const audioTarget = a.audio !== undefined ? !!a.audio : null;\n  if (promptList.length === 1 && !a.returnMeta) {\n    return ctx.call('ai.video', {\n      provider: 'Grok (网页)', model: a.model || 'grok-imagine-video',\n      prompt: promptList[0].prompt, image: promptList[0].image || a.image,\n      resolution: resTarget, duration: +durNum, ratio: ratioTarget, audio: audioTarget === null ? undefined : audioTarget,\n    });\n  }\n  const settled = await Promise.allSettled(promptList.map(item => ctx.call('ai.video', {\n    provider: 'Grok (网页)', model: a.model || 'grok-imagine-video',\n    prompt: String(item.prompt || '').trim(), image: item.image || a.image,\n    resolution: item.resolution || resTarget, duration: item.duration || +durNum,\n    ratio: normRatio(item.ratio || ratioTarget, item.size, true),\n    audio: item.audio !== undefined ? !!item.audio : (audioTarget === null ? undefined : audioTarget),\n  }).then(media => Object.assign({ prompt: String(item.prompt || '').trim(), resolution: item.resolution || resTarget, duration: +(item.duration || durNum), ratio: item.ratio || ratioTarget }, media))));\n  const videos = settled.filter(r => r.status === 'fulfilled').map(r => r.value);\n  const errors = settled.filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason));\n  if (!videos.length) throw new Error(errors[0] || '视频生成全部失败');\n  return { count: videos.length, resolution: resTarget, duration: +durNum, ratio: ratioTarget || 'default', videos, errors: errors.length ? errors : undefined };\n}\n\nif (act === 'imagine_agent') {\n  const prompt = String(a.prompt || '').trim();\n  if (!prompt) throw new Error('imagine_agent 需要 prompt');\n  const refImages = [].concat(a.images || a.image || []).filter(Boolean);\n  const expectVideo = a.expectVideo !== undefined ? !!a.expectVideo : /视频|短片|影片|宣传片|video|film|clip|秒/i.test(prompt);\n  return tools.openTab('https://grok.com/imagine', async tabId => {\n    const oldMedia = await tools.runPage(tabId, `(() => { const fp = s => s ? s.slice(0, 160) + '#' + s.length : ''; return { imgs: [...document.querySelectorAll('img')].map(i => fp(i.currentSrc || i.src)).filter(Boolean), vids: [...document.querySelectorAll('video,video source')].map(v => v.currentSrc || v.src || '').filter(Boolean) }; })()`, 10000, 'MAIN');\n    await tools.runPage(tabId, `(async () => { const ag = document.querySelector('button[aria-label=\"代理\"],button[aria-label=\"Agent\"]'); if (ag && ag.getAttribute('aria-pressed') !== 'true') { ag.click(); await new Promise(r => setTimeout(r, 450)); } })()`, 10000, 'MAIN');\n    if (refImages.length) {\n      const pasted = await tools.pasteImages(tabId, refImages, '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', 'button[aria-label=\"Remove image\"],button[aria-label*=\"移除\"],form img[src^=\"blob:\"]');\n      if (!pasted) throw new Error('Grok 代理模式参考图上传失败');\n      await tools.sleep(1000);\n    }\n    await tools.fillEditor(tabId, prompt, { selector: '.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]', submit: true });\n\n    const t0 = Date.now(), maxMs = Math.min(Number(a.timeout) || (expectVideo ? 420000 : 120000), 540000);\n    let lastSig = '', stable = 0, snap = null, lastVidsKey = '';\n    while (Date.now() - t0 < maxMs) {\n      await tools.sleep(3000);\n      snap = await tools.runPage(tabId, `((oldImgs, oldVids) => {\n        const fp = s => s ? s.slice(0, 160) + '#' + s.length : '', oldI = new Set(oldImgs || []), oldV = new Set(oldVids || []), seen = new Set(), imgs = [];\n        const stopBtn = document.querySelector('button[aria-label*=\"停止\"],button[aria-label*=\"Stop\"],button[aria-label*=\"取消\"],button[aria-label*=\"Cancel\"]');\n        const busyText = (document.querySelector('main')?.innerText || '').slice(-1500);\n        const busy = !!stopBtn || /正在生成|正在思考|正在制作|正在渲染|正在剪辑|正在合并|Thinking|Generating|Rendering|Creating|Working/i.test(busyText.slice(-300));\n        document.querySelectorAll('img').forEach((i, idx) => {\n          const u = i.currentSrc || i.src || '', alt = (i.alt || '').trim();\n          if (!u || oldI.has(fp(u)) || !i.complete || Math.max(i.naturalWidth, i.naturalHeight) < 512 || alt === '生成的图像' || alt.toLowerCase().startsWith('generating') || /avatar|icon|logo|cookielaw/i.test(u)) return;\n          const k = fp(u); if (seen.has(k)) return; seen.add(k);\n          imgs.push({ idx, isData: u.startsWith('data:'), url: u.startsWith('data:') ? '' : u, w: i.naturalWidth, h: i.naturalHeight, len: u.length });\n        });\n        const vids = [...new Set([...document.querySelectorAll('video,video source')].map(v => v.currentSrc || v.src || '').filter(u => u && !oldV.has(u) && (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:'))))];\n        const text = [...document.querySelectorAll('.response-content-markdown,main p,main li')].map(n => (n.innerText || '').trim()).filter(Boolean).slice(-12).join(String.fromCharCode(10));\n        return { url: location.href, generating: !!stopBtn, busy, imgs, vids, text: text.slice(0, 4000) };\n      })(${JSON.stringify(oldMedia?.imgs || [])}, ${JSON.stringify(oldMedia?.vids || [])})`, 12000, 'MAIN').catch(() => null);\n      if (!snap) continue;\n      const sig = `${snap.imgs.length}|${snap.vids.length}|${snap.text.length}`;\n      const vk = snap.vids.join(',');\n      if (vk !== lastVidsKey) { lastVidsKey = vk; stable = 0; }\n      if (expectVideo) {\n        // 期待视频时：必须看到新视频且不在生成中，稳定 4 轮(12秒)防分镜还在拼接最终成片；若长时间无视频但彻底结束(>90s 且非 busy 且有完整文字说明)也稳态退出\n        if (!snap.generating && !snap.busy && snap.vids.length) {\n          if (sig === lastSig) { if (++stable >= 4) break; } else { stable = 0; lastSig = sig; }\n        } else if (!snap.generating && !snap.busy && Date.now() - t0 > 90000 && snap.text.length > 40) {\n          if (sig === lastSig) { if (++stable >= 5) break; } else { stable = 0; lastSig = sig; }\n        } else {\n          stable = 0; lastSig = sig;\n        }\n      } else {\n        if (!snap.generating && (snap.imgs.length || snap.vids.length || snap.text.length > 20)) {\n          if (sig === lastSig) { if (++stable >= 2) break; } else { stable = 0; lastSig = sig; }\n        } else { stable = 0; lastSig = sig; }\n      }\n    }\n    const videos = [];\n    // 代理模式最后一个视频通常是最终合成成片，下载最后一个（或最多 2 个）返回给调用方直接播放\n    const targetVids = (snap?.vids || []).slice(-2);\n    for (const vu of targetVids) {\n      const m = vu.startsWith('http')\n        ? await tools.fetchMedia(vu, 'video/mp4').catch(() => tools.blobFromTab(tabId, vu, 'video/mp4')).catch(() => null)\n        : await tools.blobFromTab(tabId, vu, 'video/mp4').catch(() => null);\n      if (m?.data) videos.push(Object.assign(m, { url: vu }));\n    }\n    const images = [];\n    if (!videos.length) {\n      for (const item of (snap?.imgs || []).slice(0, 4)) {\n        if (item.isData) {\n          const src = await tools.runPage(tabId, `(() => { const i = document.querySelectorAll('img')[${item.idx}]; return i ? (i.currentSrc || i.src || '') : ''; })()`, 20000, 'MAIN');\n          const m = /^data:([^;,]+);base64,(.+)$/.exec(src || '');\n          if (m) images.push({ mimeType: m[1], data: m[2], width: item.w, height: item.h });\n        } else if (item.url) {\n          const media = item.url.startsWith('http') ? await tools.fetchMedia(item.url, 'image/jpeg').catch(() => tools.blobFromTab(tabId, item.url, 'image/jpeg')) : await tools.blobFromTab(tabId, item.url, 'image/jpeg');\n          images.push(Object.assign(media, { width: item.w, height: item.h }));\n        }\n      }\n    }\n    return {\n      url: snap?.url || 'https://grok.com/imagine',\n      text: snap?.text || '',\n      videoCount: videos.length,\n      videos,\n      videoUrls: snap?.vids || [],\n      imageCount: images.length,\n      images,\n    };\n  }, { readyExpr: `document.querySelector('button[aria-label=\"代理\"],button[aria-label=\"Agent\"]') && document.querySelector('.ProseMirror,[role=\"textbox\"],[contenteditable=\"true\"]') `, timeout: 40000, world: 'MAIN' });\n}\n\nthrow new Error('未知 Grok 动作: ' + act + '，可用: observe / quota / library / conversations / chat / image / imageEdit / video / imagine_agent');",
+  "at": 1795624640054
+}
