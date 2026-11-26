@@ -1,35 +1,24 @@
-# Colony 本机订阅代理 (`colony-sub`)
+# Colony 本机聚合网关与订阅模块 (`sub/`)
 
-把你已有的 AI 订阅账号在本机转成标准 OpenAI 兼容接口（`http://127.0.0.1:4135`），登录完一键同步进 Colony「AI 配置」，所有块与小应用直接可用。
+把你的 **5 家 AI 订阅账号 + AI 配置里的常规 API 厂商 + 浏览器网页模型反桥** 统一聚合成一个本机 OpenRouter / CLIProxyAPI 兼容接口（默认 `http://127.0.0.1:4135/v1`）。
 
-## 支持的订阅渠道
+> **单进程双端口架构**：现在无需单独常驻运行此进程！运行 `local/colony-local.cjs` 时会自动在**同一个 Node 进程内**挂载本目录下的 `gateway.mjs`（`:4130` 锁死仅本机跑命令，`:4135` 物理隔离只做模型推理与 `/proxy`，路由表里零 shell/文件能力）。如只想单独跑网关，也依然保留 `node server.mjs`。
 
-| 渠道 | 登录方式 | 能力 | 说明 |
-| --- | --- | --- | --- |
-| **Cursor** | 浏览器一键授权 / 贴 `crsr_...` Key | 对话、工具调用 | 基于官方 `@cursor/sdk` |
-| **Grok Build** | 官方设备码 OAuth | 对话、思考、工具调用、生图、生视频 | 走 `auth.x.ai` 设备授权 |
-| **Antigravity** | Google OAuth | 对话、思考（Gemini / Claude 等） | 本地回调端口 `51121` |
-| **ChatGPT** | SIWC / Codex OAuth | 对话、工具调用、生图 | 本地回调端口 `1455` |
-| **Claude** | Claude Code OAuth | 对话、工具调用、`/messages` 透传 | 本地回调端口 `54545` |
+## 核心能力
+- **双协议全覆盖**：OpenAI `/v1/*`（`/models`、`/chat/completions`、`/responses`、`/images/generations`、`/audio/*`、`/embeddings`）+ Anthropic `/v1/messages`（直接给 Claude Code / Cline / Codex CLI / Cherry Studio 使用）。
+- **5 家订阅驱动**：Cursor（`@cursor/sdk`）、Grok Build（设备码 OAuth）、Antigravity（Google OAuth）、ChatGPT（SIWC / Codex OAuth）、Claude（Claude Code OAuth）。
+- **本机免密 + 局域网外放可控**：默认只听 `127.0.0.1`，留空或任意占位 Key 均放行；在 Colony「AI 配置 → 🔑 订阅与网关」主动打开局域网外放（`0.0.0.0`）时，才启用你可自定义编辑的外放密码。
+- **内置 `/proxy` 透明流式代理**：给无插件环境下的 `AI 配置` 自动兜底解决中转站 CORS 跨域。
 
-> **安全说明**：真实登录凭证只保存在你本机的 `tokens/` 目录（默认 `~/colony-sub/tokens/`），不上传云端、不进浏览器的 `colony.html`。删掉目录与块即彻底卸载。
+## 安装（一次性）
 
-## 安装与启动
-
-需要 **Node.js 22+**（Cursor SDK 要求 Node >= 22.13；若不用 Cursor，Node 18+ 也可跑其余 4 家）。
+需要 **Node.js 22+**（Cursor SDK 需要 Node >= 22.13；其余 4 家与常规聚合 Node 18+ 即可）。
 
 ```bash
-# 推荐把本目录放到用户目录 ~/colony-sub（这样在 Colony「订阅中心」面板里点按钮也能自动启动）
+# 推荐把本目录放到 ~/colony-sub（或放在 local/sub/ 下）
 cd sub
 npm install
+# 之后直接运行 local/colony-local.cjs 即可同进程拉起 4130 + 4135
+# 若只想单独起聚合网关：
 node server.mjs
 ```
-
-启动后默认监听 `http://127.0.0.1:4135`：
-- 健康检查：`GET http://127.0.0.1:4135/health`
-- 各渠道 OpenAI 接口：`http://127.0.0.1:4135/sub/<渠道id>/v1`
-- 聚合接口：`http://127.0.0.1:4135/v1`
-
-## 单独导入「订阅中心」块
-
-`colony.html` 已内置「订阅中心」块。如果你在旧版 Colony 上想单独装它，可在桌面 **设置 → 块 → 导入 Petri** 选中本目录的 `petri-sub.html`。

@@ -24,8 +24,8 @@ window.addEventListener('message', (ev) => {
   const m = ev.data && ev.data.__colonyRelay;
   if (!m || !m.id) return;
 
-  /* 本机打开的 Colony 单文件(file://): 页面里有 colony/petri 或 colony/stem 脚本才算, 告诉后台; 后台只给它连本机 agent 的那几样 */
-  if (location.protocol === 'file:' && window === window.top && document.querySelector('script[type="colony/petri"],script[type="colony/stem"],script#stem'))
+  /* 本机打开的 Colony 单文件(file://, 含整包 colony.html 与独立导出的 petri-*.html): 页面里有 colony/petri 或 template[data-petri] 才放行 */
+  if (location.protocol === 'file:' && window === window.top && document.querySelector('script[type="colony/petri"],script[type="colony/stem"],script#stem,template[data-petri]'))
     m.colonyPage = true;
 
   if (m.op === 'cancel') { const p = ports.get(m.id); if (p) { try { p.disconnect(); } catch { } ports.delete(m.id); } return; }

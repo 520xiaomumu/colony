@@ -1,9 +1,9 @@
 # Colony
 
-一个 HTML 文件就是一整个 AI 工作台：内核 Stem + 一个个可改源码的块（AI 配置、全能 agent、agent 桥接、界面、次元口袋、代码解读、工作流、插件管理、本机、订阅中心）+ 桌面小应用。
+一个 HTML 文件就是一整个 AI 工作台：内核 Stem + 一个个可改源码的块（AI 配置、全能 agent、agent 桥接、界面、次元口袋、代码解读、工作流、插件管理、本机）+ 桌面小应用。
 
 - 最新版：**11.26**（2026-11-26）· [`release-2026-11-26/colony.html`](release-2026-11-26/colony.html)，双击打开即可 · [发布页 v11.26](https://github.com/520xiaomumu/colony/releases/tag/v11.26) · [更新说明](release-2026-11-26/更新说明.md) · [新手上手指南](release-2026-11-26/README.md)
-- 发布包：[release-2026-11-26](release-2026-11-26/)（最新，含全部 10 块源码、本机脚本、本机订阅代理、浏览器插件、4 个网页插件与一键启动脚本） · [release-2026-11-07](release-2026-11-07/) · [release-2026-10-31](release-2026-10-31/)（含小应用、工作流） · [release-2026-10-24](release-2026-10-24/)
+- 发布包：[release-2026-11-26](release-2026-11-26/)（最新，含全部 9 块源码、独立 `petri-ai.html`、单进程双端口本机+聚合网关、Colony Bridge v0.6 插件、4 个网页插件与一键启动脚本） · [release-2026-11-07](release-2026-11-07/) · [release-2026-10-31](release-2026-10-31/)（含小应用、工作流） · [release-2026-10-24](release-2026-10-24/)
 - 根目录的 [`colony.html`](colony.html) 是 10-31 版，留作旧版入口
 - 视频介绍：B 站「Colony 小剧场」https://www.bilibili.com/video/BV1QLxF6pEQF
 - 开源协议：采用 MIT 协议，见 [LICENSE](LICENSE)
@@ -26,10 +26,10 @@
 | 层 | Colony 里是 | 像什么 | 给了什么 |
 | --- | --- | --- | --- |
 | 本体 | `colony.html`（Stem + 块 + 小应用） | 网页 | 一切逻辑、界面、记忆 |
-| 浏览器层 | 插件管理块 + Colony Bridge 插件 | WebView | 碰到你的真浏览器：带 cookie 代发请求、标签页、CDP、脚本、录屏、网页插件 |
-| 本地层 | 本机块 + `colony-local.cjs` + `colony-sub` | Electron（网页外壳 + 本地 Node） | 碰到你的电脑：跑命令、读写文件、本机订阅代理；今天是 Windows 上的 app 外壳，后续有安卓、苹果的 app petri |
+| 浏览器层 | 插件管理块 + Colony Bridge v0.6 插件 | WebView | 碰到你的真浏览器：免 CORS 转发、纯插件 OAuth、标签页、CDP、脚本、录屏、网页插件 |
+| 本地层 | 本机块 + `colony-local.cjs`（`:4130` 控制面 + `:4135` 聚合网关数据面） | Electron（网页外壳 + 单一本地 Node 进程） | 碰到你的电脑：跑命令、读写文件、私有 OpenRouter 聚合网关与 5 家订阅代理 |
 
-取魂不取形：要 WebView / Electron 的魂（网页碰到宿主、网页加本地能力），不要它们的形——不自带浏览器内核、不打包运行时，壳只是一个零依赖的脚本。厚壳仍是历史错误。
+取魂不取形：要 WebView / Electron 的魂（网页碰到宿主、网页加本地能力），不要它们的形——不自带浏览器内核、不打包运行时，壳只是一个极薄的脚本。厚壳仍是历史错误。
 
 **迭代宪法要点。**
 - Stem 冻结，功能一律下放成块；宿主层只缩不胀。

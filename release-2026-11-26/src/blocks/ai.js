@@ -3,39 +3,138 @@
 // ↦ 借 stem 的 键值库
 // ↦ 借 stem 的 换段
 // ═ 网络请求 · 借用者: petri:porter ═
-// 超时与重试的唯一入口, 免得每家各写一套
+// 超时与重试的唯一入口, 免得每家各写一套; 未填转发地址时遇 CORS 自动阶梯回退(插件 → 本机 /proxy)
 async function 网络请求(url, opt = {}) {
   const { retries = 1, timeout = 60000, signal: sg } = opt;
   let 真 = url, 经 = '', last;
+  const 源 = (() => { try { return new URL(url).origin; } catch { return ''; } })();
+  const 是回环 = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(url);
   // ✂ 转发 · 要: 网络请求
   // 转发: 填了就经它转(浏览器不让网页直连时用), {url} 换成编码后的原网址, 没写 {url} 就接在末尾
   const 转 = opt.转发;
   if (转) [真, 经] = [(转.includes('{url}') ? 转 : 转 + '{url}').replace('{url}', encodeURIComponent(url)),
     `(经转发地址 ${转})`];
   // ✂ 转发 完
+  const 标准化头 = h => {
+    const out = {};
+    if (!h) return out;
+    if (h instanceof Headers) h.forEach((v, k) => { out[k] = v; });
+    else if (Array.isArray(h)) h.forEach(([k, v]) => { out[k] = v; });
+    else Object.entries(h).forEach(([k, v]) => { if (v != null) out[k] = String(v); });
+    return out;
+  };
+  const 经插件 = async () => {
+    if (typeof window === 'undefined' || !window.postMessage) return null;
+    const method = (opt.method || 'GET').toUpperCase(), headers = 标准化头(opt.headers);
+    const bodyStr = typeof opt.body === 'string' ? opt.body : undefined;
+    if (opt.body && bodyStr === undefined) return null;
+    const isStream = method === 'POST' && bodyStr && /"stream"\s*:\s*true\b/.test(bodyStr);
+    const id = 'air_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (isStream) {
+      return await new Promise((resolve) => {
+        let settled = false, ctrlRef = null;
+        const enc = new TextEncoder();
+        const done = () => { clearTimeout(t0); window.removeEventListener('message', on); };
+        const onAbort = () => {
+          window.postMessage({ __colonyRelay: { id, op: 'cancel' } }, '*');
+          done();
+          try { ctrlRef?.error(new DOMException('Aborted', 'AbortError')); } catch {}
+        };
+        if (sg) sg.aborted ? onAbort() : sg.addEventListener('abort', onAbort, { once: true });
+        const stream = new ReadableStream({
+          start(c) { ctrlRef = c; },
+          cancel() { window.postMessage({ __colonyRelay: { id, op: 'cancel' } }, '*'); done(); },
+        });
+        const on = ev => {
+          const d = ev.data?.__colonyRelayChunk;
+          if (!d || d.id !== id) return;
+          clearTimeout(t0);
+          if (d.keepalive) return;
+          if (!settled) {
+            settled = true;
+            if (d.error && d.status) {
+              done(); try { ctrlRef.close(); } catch {}
+              return resolve(new Response(d.error, { status: d.status }));
+            }
+            if (d.error) { done(); try { ctrlRef.close(); } catch {} return resolve(null); }
+            resolve(new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8' } }));
+          }
+          if (d.delta) try { ctrlRef.enqueue(enc.encode(d.delta)); } catch {}
+          if (d.done || d.error) { done(); try { ctrlRef.close(); } catch {} }
+        };
+        window.addEventListener('message', on);
+        const t0 = setTimeout(() => { if (!settled) { settled = true; done(); resolve(null); } }, 3500);
+        window.postMessage({ __colonyRelay: { id, op: 'stream', req: { url, method, headers, body: bodyStr } } }, '*');
+      });
+    }
+    return await new Promise((resolve) => {
+      const on = ev => {
+        const r = ev.data?.__colonyRelayResult;
+        if (!r || r.id !== id) return;
+        clearTimeout(t0); window.removeEventListener('message', on);
+        if (r.error && !r.status) return resolve(null);
+        const rh = new Headers();
+        Object.entries(r.headers || {}).forEach(([k, v]) => { try { rh.set(k, String(v)); } catch {} });
+        let body = r.text ?? '';
+        if (r.base64) {
+          const bin = atob(r.base64), u8 = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+          body = u8;
+        }
+        resolve(new Response(body, { status: Number(r.status) || 200, headers: rh }));
+      };
+      window.addEventListener('message', on);
+      const t0 = setTimeout(() => { window.removeEventListener('message', on); resolve(null); }, Math.min(timeout, 4000));
+      window.postMessage({ __colonyRelay: { id, op: 'fetch', req: { url, method, headers, body: bodyStr, timeout } } }, '*');
+    });
+  };
+  const 经本机 = async () => {
+    const base = (网络请求.本机代理 || 'http://127.0.0.1:4135').replace(/\/+$/, '');
+    const ctrl = new AbortController(), onAbort = () => ctrl.abort(), timer = setTimeout(onAbort, timeout);
+    if (sg) sg.aborted ? onAbort() : sg.addEventListener('abort', onAbort, { once: true });
+    try {
+      const r = await fetch(base + '/proxy?url=' + encodeURIComponent(url), Object.assign({}, opt, { signal: ctrl.signal }));
+      clearTimeout(timer);
+      return r;
+    } catch { clearTimeout(timer); return null; }
+  };
+  const 记通道 = via => { if (源) 网络请求.通道.set(源, via); if (opt.报通道) opt.报通道(via); };
+  if (!转 && !是回环 && 源 && 网络请求.通道.has(源)) {
+    const via = 网络请求.通道.get(源);
+    const res = via === 'plugin' ? await 经插件() : await 经本机();
+    if (res) { if (opt.报通道) opt.报通道(via); return res; }
+    网络请求.通道.delete(源);
+  }
   for (let i = 0; i <= retries; i++) {
     if (i) await new Promise(r => setTimeout(r, 800));
     const ctrl = new AbortController(), onAbort = () => ctrl.abort(), timer = setTimeout(onAbort, timeout);
-    // 已取消的信号不再发事件, 得先看一眼, 不然请求照发
     if (sg) sg.aborted ? onAbort() : sg.addEventListener('abort', onAbort, { once: true });
     try {
       const res = await fetch(真, Object.assign({}, opt, { signal: ctrl.signal }));
       clearTimeout(timer);
-      if (res.status < 500 || i >= retries) return res;   // 429 不在这重发: 上层按厂商说的时间等
+      if (opt.报通道) opt.报通道(转 ? 'proxy' : 'direct');
+      if (res.status < 500 || i >= retries) return res;
       last = new Error(`HTTP ${res.status}`);
     } catch (e) {
       clearTimeout(timer); last = e;
       if (sg?.aborted) throw e;
-      if (ctrl.signal.aborted) break;   // 超时不重发: 厂商可能已在算, 再发扣两次钱
+      if (ctrl.signal.aborted) break;
+      if (e?.name === 'TypeError' && !转 && !是回环) {
+        const r1 = await 经插件();
+        if (r1) { 记通道('plugin'); return r1; }
+        const r2 = await 经本机();
+        if (r2) { 记通道('local'); return r2; }
+      }
     }
   }
-  if (last?.name === 'TypeError')   // retry: 调用方可隔会再试
-    throw Object.assign(new Error('连不上 ' + url + 经 + ': 网络不通, 或浏览器不让网页直接连它'), { retry: true });
+  if (last?.name === 'TypeError')
+    throw Object.assign(new Error('连不上 ' + url + 经 + ': 网络不通, 或浏览器不让网页直接连它(可装插件、连本机, 或在高级区填转发地址)'), { retry: true });
   if (last?.name === 'AbortError')
     throw new Error(`请求 ${url} 超过 ${Math.round(timeout / 1000)} 秒没回应`);
   throw last;
 }
-
+网络请求.通道 = new Map();
+网络请求.本机代理 = 'http://127.0.0.1:4135';
 // ═ 并发闸 ═
 // 每家同时在跑的请求有上限(默认 8, 可调 concurrency), 多的排队, 免得扇出几十个把额度打爆; 429 后 20 秒内降到 3
 const 并发闸 = {
@@ -965,10 +1064,12 @@ const 厂商配置 = {
 const 界面样式 = `.ai-card{--m:var(--text-muted,#8a8a8a);--a:var(--accent,#B5FF00);
 --l:var(--border,rgba(255,255,255,.08));padding:16px;color:var(--text,#fafafa);
 font-family:var(--sans,-apple-system,"PingFang SC",sans-serif);font-size:13px}
-.ai-hint,.ai-chip,.ai-add,.ai-label,.ai-btn,.ai-cap,.ai-sp,.ai-card summary{color:var(--m)}
-.ai-bar,.ai-chip,.ai-in,.ai-btn,.ai-cap{border:1px solid var(--l)}
+.ai-hint,.ai-chip,.ai-add,.ai-label,.ai-btn,.ai-cap,.ai-sp,.ai-card summary,.ai-tab{color:var(--m)}
+.ai-bar,.ai-chip,.ai-in,.ai-btn,.ai-cap,.ai-tab,.ai-sub-card{border:1px solid var(--l)}
 .ai-card button,.ai-card summary{cursor:pointer}
-.ai-bar,.ai-acts,.ai-check,.ai-sp{display:flex;align-items:center;gap:8px}
+.ai-bar,.ai-acts,.ai-check,.ai-sp,.ai-tabs,.ai-pw{display:flex;align-items:center;gap:8px}
+.ai-tabs{gap:6px;margin-bottom:10px}.ai-tab{background:var(--bg-2,#131313);padding:6px 14px;border-radius:10px;font-size:12px}
+.ai-tab.cur{color:var(--a);border-color:var(--a);background:rgba(181,255,0,.07)}
 .ai-hint{font-size:11px;line-height:1.6;margin:0 0 12px}
 .ai-bar{gap:6px;flex-wrap:wrap;padding:10px;background:var(--bg,#0a0a0a);border-radius:12px;
 margin-bottom:10px}.ai-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;
@@ -979,10 +1080,13 @@ border:1px dashed rgba(255,255,255,.3);background:transparent;font-size:15px}
 .ai-label{display:block;font-size:10px;margin:12px 0 6px}.ai-in{width:100%;box-sizing:border-box;
 background:var(--bg,#0a0a0a);color:var(--text,#fafafa);padding:9px 12px;border-radius:10px;font-size:13px;
 font-family:inherit}.ai-in:focus{outline:none;border-color:var(--a)}
-.ai-row{display:flex;gap:8px;margin-top:6px}.ai-row .ai-in{flex:1}
+.ai-pw{gap:6px}.ai-pw .ai-in{flex:1;min-width:0}
+.ai-ico{padding:7px 9px;min-width:34px;text-align:center}
+.ai-row{display:flex;gap:8px;margin-top:6px;align-items:center}.ai-row .ai-in{flex:1}
 .ai-row select.ai-in{flex:0 1 auto;width:auto;min-width:0}
 .ai-btn{background:transparent;padding:8px 14px;border-radius:10px;font-size:12px;white-space:nowrap}
-.ai-btn:hover{color:var(--a);border-color:var(--a)}.ai-result{margin-top:10px;padding:10px 14px;
+.ai-btn:hover{color:var(--a);border-color:var(--a)}.ai-btn.pri{background:var(--a);color:#0a0a0a;border-color:var(--a);font-weight:600}
+.ai-btn:disabled{opacity:.5;cursor:default}.ai-result{margin-top:10px;padding:10px 14px;
 border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap}
 .ai-result.ok{background:rgba(181,255,0,.08);border:1px solid rgba(181,255,0,.3);color:var(--a)}
 .ai-result.bad{background:rgba(255,87,87,.08);border:1px solid rgba(255,87,87,.3);color:#ff9292}
@@ -990,97 +1094,685 @@ border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap}
 .ai-caps{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .ai-cap{background:none;font-size:10px;padding:2px 8px;border-radius:999px}
 .ai-cap.ok{border-color:var(--a);color:var(--a)}span.ai-cap{border-style:dashed}
+.ai-cap.wait{border-color:#f5c542;color:#f5c542}
 .ai-card details{margin-top:12px}.ai-card summary{font-size:12px}
 .ai-btn.danger:hover,.ai-btn.warn{color:#ff6b6b;border-color:#ff6b6b}.ai-narrow{width:auto;flex:none}
-.ai-sp{gap:6px;font-size:12px}.ai-sp .ai-in{flex:none;width:76px}`;
-// ═ 设置界面 · 跟着: 厂商配置, 测通, 打包, 界面样式, 选模型, 协议适配, 各类模型 ═
-// 一排按钮选厂商, 字段改完即存; 文本和选了模型的类各一行, 别的从「加一类」加; 测通了徽章亮
-// 删厂商、打包要点两下: 第一下变成警告, 3 秒不点或点了别处就复原(只记在按钮上, 关窗再开不带着); 不用浏览器弹窗
+.ai-sp{gap:6px;font-size:12px}.ai-sp .ai-in{flex:none;width:76px}
+.ai-sub-card{border-radius:12px;padding:12px 14px;margin-top:10px;background:rgba(255,255,255,.02)}
+.ai-sub-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ai-sub-hd .sp{flex:1}.ai-sub-code{font:700 16px/1.2 var(--mono,monospace);letter-spacing:2px;color:var(--a);
+background:var(--bg,#0a0a0a);padding:4px 10px;border-radius:8px;border:1px solid var(--l)}
+.ai-sub-box{margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.03);font-size:12px;line-height:1.6}
+.ai-sub-box a{color:var(--a);word-break:break-all}`;
+// ═ 设置界面 · 跟着: 厂商配置, 测通, 打包, 界面样式, 选模型, 协议适配, 各类模型, 网络请求 ═
+// 统一管理常规厂商、订阅账号与本机聚合网关(:4135, 私有 OpenRouter); 单块导出也能独立管理
+// ── 纯插件 OAuth 订阅引擎(兼顾手机浏览器装扩展、无本机进程场景; 1 套通用 PKCE/设备码 + 4 家配置表)
+const 插件订阅 = (() => {
+  const send = (op, req, ms = 15000) => new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.postMessage) return reject(new Error('未检测到浏览器环境'));
+    const id = 'ps_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const on = ev => {
+      const r = ev.data?.__colonyRelayResult;
+      if (!r || r.id !== id) return;
+      clearTimeout(t); window.removeEventListener('message', on);
+      if (r.error && !r.status) reject(new Error(r.error)); else resolve(r);
+    };
+    window.addEventListener('message', on);
+    const t = setTimeout(() => { window.removeEventListener('message', on); reject(new Error('插件未响应(请确认已安装启用 Colony Bridge)')); }, ms);
+    window.postMessage({ __colonyRelay: { id, op, req } }, '*');
+  });
+  const stream = (req, signal) => new ReadableStream({
+    start(ctrl) {
+      const id = 'pss_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), enc = new TextEncoder();
+      const done = () => { window.removeEventListener('message', on); };
+      const abort = () => { window.postMessage({ __colonyRelay: { id, op: 'cancel' } }, '*'); done(); try { ctrl.error(new DOMException('Aborted', 'AbortError')); } catch {} };
+      if (signal) signal.aborted ? abort() : signal.addEventListener('abort', abort, { once: true });
+      const on = ev => {
+        const d = ev.data?.__colonyRelayChunk;
+        if (!d || d.id !== id || d.keepalive) return;
+        if (d.error) { done(); try { ctrl.error(new Error(d.error)); } catch {} return; }
+        if (d.delta) try { ctrl.enqueue(enc.encode(d.delta)); } catch {}
+        if (d.done) { done(); try { ctrl.close(); } catch {} }
+      };
+      window.addEventListener('message', on);
+      window.postMessage({ __colonyRelay: { id, op: 'stream', req } }, '*');
+    },
+  });
+  const b64u = u8 => btoa(String.fromCharCode(...u8)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const pkce = async () => {
+    const v = b64u(crypto.getRandomValues(new Uint8Array(32))), st = b64u(crypto.getRandomValues(new Uint8Array(18)));
+    const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+    return { verifier: v, challenge: b64u(new Uint8Array(h)), state: st };
+  };
+  const jwt = t => { try { return JSON.parse(atob(String(t).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; } };
+  const pfetch = async (url, opt = {}) => {
+    const r = await send('fetch', Object.assign({ url, method: 'GET', timeout: 30000 }, opt), (opt.timeout || 30000) + 2000);
+    let json = null; try { json = r.text ? JSON.parse(r.text) : null; } catch {}
+    return { ok: r.status >= 200 && r.status < 300, status: r.status || 0, text: r.text || '', json };
+  };
+  const S = {
+    'grok-build': {
+      name: 'Grok Build', providerName: '订阅 · Grok Build (插件)', desc: 'xAI 设备码 OAuth（手机浏览器装插件也能直接登）',
+      mode: 'device', clientId: 'b1a00492-073a-47ea-816f-4c329264a828',
+      scope: 'openid profile email offline_access grok-cli:access api:access',
+      disc: 'https://auth.x.ai/.well-known/openid-configuration',
+      apiUrl: 'https://cli-chat-proxy.grok.com/v1/responses', apiStyle: 'responses',
+      dnr: { 'User-Agent': 'xai-grok-workspace/1.0.46' },
+      extraHeaders: { 'X-XAI-Token-Auth': 'xai-grok-cli', 'x-grok-client-version': '1.0.46', 'x-grok-client-identifier': 'grok-shell' },
+      models: ['grok-4.7', 'grok-4.7-build-fast', 'grok-4.6', 'grok-build-0.1', 'grok-4.5', 'grok-3-mini-fast'],
+    },
+    chatgpt: {
+      name: 'ChatGPT', providerName: '订阅 · ChatGPT (插件)', desc: 'ChatGPT Codex OAuth（无本机时由插件截获回调）',
+      mode: 'pkce', clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
+      authUrl: 'https://auth.openai.com/oauth/authorize', tokenUrl: 'https://auth.openai.com/oauth/token',
+      redirect: 'http://localhost:1455/auth/callback', scope: 'openid profile email offline_access',
+      extraAuth: { id_token_add_organizations: 'true', codex_cli_simplified_flow: 'true', originator: 'codex_cli_rs' },
+      apiUrl: 'https://chatgpt.com/backend-api/codex/responses', apiStyle: 'responses',
+      dnr: { 'User-Agent': 'codex-tui/0.154.0 (Mac OS 26.5.2; arm64)' }, extraHeaders: { originator: 'codex-tui' },
+      models: ['gpt-6.2-astra', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-mini'],
+    },
+    claude: {
+      name: 'Claude', providerName: '订阅 · Claude (插件)', desc: 'Claude Code OAuth（无本机时由插件截获回调）',
+      mode: 'pkce', clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+      authUrl: 'https://claude.ai/oauth/authorize', tokenUrl: 'https://platform.claude.com/v1/oauth/token',
+      redirect: 'http://localhost:54545/callback', jsonToken: true,
+      scope: 'org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload',
+      extraAuth: { code: 'true' }, apiUrl: 'https://api.anthropic.com/v1/messages', apiStyle: 'anthropic',
+      dnr: { 'User-Agent': 'claude-code/2.1.0' }, extraHeaders: { 'anthropic-version': '2023-06-01', 'anthropic-beta': 'oauth-2025-04-20' },
+      models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
+    },
+    antigravity: {
+      name: 'Antigravity', providerName: '订阅 · Antigravity (插件)', desc: 'Google OAuth（无本机时由插件截获回调）',
+      mode: 'pkce', clientId: '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com',
+      clientSecret: ['GOCSPX', 'K58FWR486LdLJ1mLB8sXC4z6qDAf'].join('-'),
+      authUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: 'https://oauth2.googleapis.com/token',
+      redirect: 'http://localhost:51121/oauth-callback',
+      scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/aicode',
+      extraAuth: { access_type: 'offline', prompt: 'consent' },
+      apiUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse', apiStyle: 'cloudcode',
+      dnr: { 'User-Agent': 'antigravity/hub/2.34.0 (aidev_client; os_type=darwin; arch=arm64; cl=1026637980)' },
+      models: ['gemini-4-neon-xhigh', 'gemini-4-hydrogen-xhigh', 'gemini-4-argon-high', 'claude-sonnet-4-6', 'gemini-3.8-flash-high'],
+    },
+  };
+  const pending = {}, okState = { available: false };
+  const store = (action, id, value) => send('subStore', { action, id, value }, 5000).then(r => r.data);
+  const saveToken = async (id, j, old) => {
+    const claims = jwt(j.id_token) || jwt(j.access_token) || {};
+    const auth = claims['https://api.openai.com/auth'] || {};
+    const rec = {
+      accessToken: j.access_token, refreshToken: j.refresh_token || old?.refreshToken || '',
+      expiresAt: Date.now() + (Number(j.expires_in) || 3600) * 1000,
+      email: j.account?.email_address || claims.email || old?.email || '',
+      accountId: auth.chatgpt_account_id || j.account?.uuid || old?.accountId || '',
+      projectId: old?.projectId || '',
+    };
+    if (id === 'antigravity' && !rec.projectId) {
+      const r = await pfetch('https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
+        method: 'POST', dnrHeaders: S.antigravity.dnr,
+        headers: { Authorization: 'Bearer ' + rec.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+      }).catch(() => null);
+      rec.projectId = r?.json?.cloudaicompanionProject || '';
+    }
+    await store('set', id, rec);
+    return rec;
+  };
+  const ensure = async (id, force) => {
+    const c = await store('get', id), cfg = S[id];
+    if (!c?.accessToken) throw new Error(`${cfg.name} 尚未登录（插件模式）`);
+    if (!force && c.expiresAt && Date.now() < c.expiresAt - 120000) return c;
+    if (!c.refreshToken) throw new Error(`${cfg.name} 登录已过期，请重新登录`);
+    const tUrl = cfg.tokenUrl || (await pfetch(cfg.disc)).json?.token_endpoint;
+    const params = { grant_type: 'refresh_token', refresh_token: c.refreshToken, client_id: cfg.clientId };
+    if (cfg.clientSecret) params.client_secret = cfg.clientSecret;
+    const r = await pfetch(tUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': cfg.jsonToken ? 'application/json' : 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: cfg.jsonToken ? JSON.stringify(params) : new URLSearchParams(params).toString(),
+    });
+    if (!r.ok || !r.json?.access_token) throw new Error(`${cfg.name} Token 刷新失败(${r.status})`);
+    return saveToken(id, r.json, c);
+  };
+  const 建请求 = (id, c, a) => {
+    const cfg = S[id], model = a.model || cfg.models[0], sys = a.messages.filter(m => m.role === 'system').map(m => 协议适配.文字(m.content)).join('\n');
+    const msgs = a.messages.filter(m => m.role !== 'system');
+    const headers = Object.assign({ Authorization: 'Bearer ' + c.accessToken, 'Content-Type': 'application/json', Accept: 'text/event-stream' }, cfg.extraHeaders);
+    if (id === 'chatgpt' && c.accountId) headers['chatgpt-account-id'] = c.accountId;
+    if (cfg.apiStyle === 'anthropic') {
+      return { url: cfg.apiUrl, headers, dnrHeaders: cfg.dnr, body: JSON.stringify({
+        model, max_tokens: a.maxTokens || 4096, stream: true, ...(sys ? { system: sys } : {}),
+        messages: msgs.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: 协议适配.文字(m.content) })),
+      }) };
+    }
+    if (cfg.apiStyle === 'cloudcode') {
+      return { url: cfg.apiUrl, headers, dnrHeaders: cfg.dnr, body: JSON.stringify({
+        project: c.projectId || '', model,
+        request: {
+          ...(sys ? { systemInstruction: { parts: [{ text: sys }] } } : {}),
+          contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: 协议适配.文字(m.content) }] })),
+        },
+      }) };
+    }
+    return { url: cfg.apiUrl, headers, dnrHeaders: cfg.dnr, body: JSON.stringify({
+      model, store: false, stream: true, ...(sys ? { instructions: sys } : {}),
+      input: msgs.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: 协议适配.文字(m.content) })),
+    }) };
+  };
+  const api = {
+    表: S,
+    async 探测() {
+      try { const r = await send('ping', {}, 1500); okState.available = !!r?.ok; } catch { okState.available = false; }
+      return okState.available;
+    },
+    get 可用() { return okState.available; },
+    async 列表() {
+      if (!await api.探测()) return [];
+      const all = (await store('get')) || {};
+      return Object.entries(S).map(([id, cfg]) => ({
+        id, name: cfg.name, providerName: cfg.providerName, desc: cfg.desc,
+        loggedIn: !!all[id]?.accessToken, account: all[id]?.email ? { email: all[id].email } : null,
+        loginSession: pending[id] || null, models: cfg.models,
+      }));
+    },
+    async 登录(id) {
+      const cfg = S[id];
+      if (!cfg) throw new Error('插件模式暂不支持: ' + id);
+      if (cfg.mode === 'device') {
+        const d = (await pfetch(cfg.disc)).json;
+        const r = await pfetch(d.device_authorization_endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          body: new URLSearchParams({ client_id: cfg.clientId, scope: cfg.scope }).toString(),
+        });
+        if (!r.ok || !r.json?.device_code) throw new Error('设备码申请失败: ' + r.text.slice(0, 120));
+        const dc = r.json, url = dc.verification_uri_complete || dc.verification_uri;
+        pending[id] = { state: 'pending', userCode: dc.user_code, url, message: '请在打开的页面确认验证码' };
+        (async () => {
+          const until = Date.now() + (Number(dc.expires_in) || 600) * 1000;
+          let wait = Math.max(5, Number(dc.interval) || 5) * 1000;
+          while (pending[id]?.state === 'pending' && Date.now() < until) {
+            await new Promise(ok => setTimeout(ok, wait));
+            if (pending[id]?.state !== 'pending') return;
+            const tr = await pfetch(d.token_endpoint, {
+              method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+              body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: dc.device_code, client_id: cfg.clientId }).toString(),
+            });
+            if (tr.ok && tr.json?.access_token) { await saveToken(id, tr.json); delete pending[id]; await api.同步(id).catch(() => {}); 厂商配置.通知(); return; }
+            if (tr.json?.error === 'slow_down') wait += 3000;
+            else if (tr.json?.error && tr.json.error !== 'authorization_pending') { delete pending[id]; 厂商配置.通知(); return; }
+          }
+          delete pending[id]; 厂商配置.通知();
+        })();
+        return pending[id];
+      }
+      const p = await pkce();
+      const qs = new URLSearchParams(Object.assign({
+        client_id: cfg.clientId, response_type: 'code', redirect_uri: cfg.redirect, scope: cfg.scope,
+        state: p.state, code_challenge: p.challenge, code_challenge_method: 'S256',
+      }, cfg.extraAuth || {}));
+      const authUrl = `${cfg.authUrl}?${qs}`;
+      pending[id] = { state: 'pending', url: authUrl, message: '请在弹出的授权页完成登录，插件会自动截获回调' };
+      (async () => {
+        try {
+          const got = await send('oauthIntercept', { authUrl, redirectPrefix: cfg.redirect }, 300000);
+          const u = new URL(got.callbackUrl), code = u.searchParams.get('code');
+          if (!code) throw new Error(u.searchParams.get('error_description') || '回调未带授权码');
+          const params = { grant_type: 'authorization_code', code, redirect_uri: cfg.redirect, client_id: cfg.clientId, code_verifier: p.verifier };
+          if (cfg.clientSecret) params.client_secret = cfg.clientSecret;
+          if (cfg.jsonToken) params.state = p.state;
+          const tr = await pfetch(cfg.tokenUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': cfg.jsonToken ? 'application/json' : 'application/x-www-form-urlencoded', Accept: 'application/json' },
+            body: cfg.jsonToken ? JSON.stringify(params) : new URLSearchParams(params).toString(),
+          });
+          if (!tr.ok || !tr.json?.access_token) throw new Error('换取 Token 失败(' + tr.status + ')');
+          await saveToken(id, tr.json);
+          delete pending[id];
+          await api.同步(id).catch(() => {});
+        } catch { delete pending[id]; }
+        厂商配置.通知();
+      })();
+      return pending[id];
+    },
+    async 取消(id) { delete pending[id]; },
+    async 退出(id) { delete pending[id]; await store('del', id); },
+    async 同步(id) {
+      const cfg = S[id], c = await store('get', id);
+      if (!cfg || !c?.accessToken) throw new Error('该渠道尚未在插件模式下登录');
+      const old = await 厂商配置.找(cfg.providerName);
+      const patch = { endpoint: 'plugin-sub://' + id, apiKey: '', protocol: 'plugin-sub', models: cfg.models, model: old?.model || cfg.models[0], toolMode: 'text' };
+      const p = old ? await 厂商配置.更新(old.id, patch) : await 厂商配置.新增(Object.assign({ name: cfg.providerName }, patch));
+      return { ok: true, provider: p.name, models: cfg.models.length };
+    },
+    async *对话(p, a) {
+      const id = String(p.endpoint || '').replace(/^plugin-sub:\/\//, ''), cfg = S[id];
+      if (!cfg) throw new Error('未知纯插件订阅渠道: ' + id);
+      const c = await ensure(id, false), req = 建请求(id, c, a);
+      const reader = stream(req, a.signal).getReader(), dec = new TextDecoder();
+      let buf = '', full = '';
+      try {
+        while (true) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const raw = line.slice(5).trim(); if (!raw || raw === '[DONE]') continue;
+            let j; try { j = JSON.parse(raw); } catch { continue; }
+            const d = cfg.apiStyle === 'anthropic' ? (j.type === 'content_block_delta' && j.delta?.type === 'text_delta' ? j.delta.text : '')
+              : cfg.apiStyle === 'cloudcode' ? ((j.response?.candidates?.[0]?.content?.parts || []).filter(x => !x.thought).map(x => x.text || '').join(''))
+              : (j.type === 'response.output_text.delta' ? (j.delta || '') : (j.choices?.[0]?.delta?.content || ''));
+            if (d) { full += d; yield { delta: d }; }
+          }
+        }
+        yield { done: true, content: full, stop: 'stop', usage: null, toolCalls: null };
+      } finally { Promise.resolve(reader.cancel()).catch(() => {}); }
+    },
+  };
+  return api;
+})();
+
+const 订阅网关 = {
+  址键: 'settings:sub.url', 同步键: 'settings:sub.synced', 暴露键: 'settings:ai.gwExposeProviders',
+  url: 'http://127.0.0.1:4135', ok: false, 状态: null, 错: '', 开Key: {}, 轮询: null,
+  async 读址() {
+    const saved = await ctx.kv.get(this.址键);
+    if (saved) this.url = String(saved).replace(/\/+$/, '');
+    网络请求.本机代理 = this.url;
+    return this.url;
+  },
+  async 设址(u) {
+    u = String(u || '').trim().replace(/\/+$/, '');
+    if (!u) return this.url;
+    this.url = /^https?:\/\//i.test(u) ? u : 'http://' + u;
+    网络请求.本机代理 = this.url;
+    await ctx.kv.set(this.址键, this.url);
+    return this.url;
+  },
+  async 请(path, opt = {}) {
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), opt.timeout || 15000);
+    let r;
+    try {
+      const init = { method: opt.method || 'GET', signal: ac.signal };
+      if (opt.body !== undefined) {
+        init.method = opt.method || 'POST';
+        init.headers = { 'Content-Type': 'application/json' };
+        init.body = JSON.stringify(opt.body);
+      }
+      r = await fetch(this.url + path, init);
+    } catch {
+      throw Object.assign(new Error(ac.signal.aborted ? '请求超时' : '连不上本机网关 ' + this.url), { 断: true });
+    } finally { clearTimeout(t); }
+    const j = await r.json().catch(() => ({ error: { message: '响应不是 JSON (' + r.status + ')' } }));
+    if (!r.ok || j?.error) {
+      const msg = typeof j?.error === 'string' ? j.error : (j?.error?.message || ('HTTP ' + r.status));
+      throw new Error(msg);
+    }
+    return j;
+  },
+  async 刷新() {
+    await this.读址();
+    try {
+      this.状态 = await this.请('/admin/status', { timeout: 3500 });
+      this.ok = true; this.错 = '';
+      if (!this.桥) this.连网页桥();
+    } catch (e) { this.ok = false; this.状态 = null; this.错 = e.message; }
+    return this.状态;
+  },
+  async 启动() {
+    await this.读址();
+    if (await this.刷新()) return { ok: true, alreadyRunning: true, status: this.状态 };
+    if (colony.has('local.restart')) {
+      await ctx.call('local.restart', {}).catch(() => {});
+      for (let i = 0; i < 8; i++) {
+        await new Promise(r => setTimeout(r, 350));
+        if (await this.刷新()) return { ok: true, started: true, status: this.状态 };
+      }
+    }
+    if (!colony.has('local.run')) throw new Error('请先在电脑运行 colony-local.cjs（自动同进程启动 4135 网关）');
+    const info = await ctx.call('local.info', {});
+    const isWin = info.os === 'win32', port = (/:(\d+)$/.exec(this.url) || [])[1] || '4135';
+    const dir = isWin ? info.home + '\\colony-sub' : info.home + '/colony-sub';
+    const cmd = isWin
+      ? `Start-Process -FilePath "node" -ArgumentList "server.mjs","--port","${port}" -WorkingDirectory "${dir}" -WindowStyle Hidden`
+      : `nohup node "${dir}/server.mjs" --port ${port} >/dev/null 2>&1 &`;
+    await ctx.call('local.run', { cmd, cwd: dir, wait: 5000 });
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 400));
+      if (await this.刷新()) return { ok: true, started: true, status: this.状态 };
+    }
+    throw new Error('已尝试启动但 ' + this.url + ' 仍未响应');
+  },
+  async 设网关(patch) {
+    const r = await this.请('/admin/gateway', { method: 'POST', body: patch, timeout: 6000 });
+    if (patch.expose !== undefined) await new Promise(ok => setTimeout(ok, 220));
+    await this.刷新();
+    return r;
+  },
+  async 读暴露表() { return (await ctx.kv.get(this.暴露键)) || {}; },
+  async 设厂商暴露(pid, on) {
+    const map = Object.assign({}, await this.读暴露表(), { [pid]: !!on });
+    await ctx.kv.set(this.暴露键, map);
+    await this.推厂商();
+    return map;
+  },
+  可聚厂商(list) {
+    return list.filter(p => p.endpoint && p.protocol !== 'web-browser'
+      && !/^https?:\/\/(127\.0\.0\.1|localhost):4135\b/i.test(p.endpoint));
+  },
+  async 推厂商() {
+    if (!this.ok && !await this.刷新()) return { ok: false, error: this.错 };
+    const all = await 厂商配置.列表(), list = this.可聚厂商(all), map = await this.读暴露表();
+    const providers = list.map(p => ({
+      id: p.id, name: p.name, endpoint: p.endpoint, apiKey: p.apiKey || '',
+      protocol: p.protocol || 'openai-compatible', models: p.models || [], defaultModel: p.model || '',
+      exposed: map[p.id] !== false,
+    }));
+    const r = await this.请('/admin/providers', { method: 'POST', body: { providers }, timeout: 5000 });
+    await this.推网页模型(all).catch(() => {});
+    await this.刷新();
+    return r;
+  },
+  桥: null, 桥取消: new Map(),
+  async 推网页模型(all) {
+    if (!this.ok) return;
+    const list = all || await 厂商配置.列表();
+    const models = [];
+    for (const p of list) {
+      if (p.protocol !== 'web-browser') continue;
+      const ms = (p.models && p.models.length) ? p.models : (p.model ? [p.model] : []);
+      for (const m of ms) models.push({ providerName: p.name, model: m });
+    }
+    await this.请('/admin/web-bridge/register', { method: 'POST', body: { models }, timeout: 4000 });
+  },
+  连网页桥() {
+    if (typeof EventSource === 'undefined' || this.桥) return;
+    const es = new EventSource(this.url + '/admin/web-bridge/events');
+    this.桥 = es;
+    es.addEventListener('ready', () => { this.ok = true; this.推网页模型().catch(() => {}); });
+    es.addEventListener('cancel', ev => {
+      try { const { reqId } = JSON.parse(ev.data); this.桥取消.get(reqId)?.abort(); this.桥取消.delete(reqId); } catch {}
+    });
+    es.addEventListener('chat', async ev => {
+      let job; try { job = JSON.parse(ev.data); } catch { return; }
+      const ac = new AbortController();
+      this.桥取消.set(job.reqId, ac);
+      const reply = body => fetch(this.url + '/admin/web-bridge/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ reqId: job.reqId }, body)),
+      }).catch(() => {});
+      try {
+        const p = await 厂商配置.找(job.providerName);
+        if (!p) throw new Error('网页厂商未找到: ' + job.providerName);
+        let full = '';
+        if (job.stream) {
+          for await (const ch of 模型调用.chatStream(p, {
+            model: job.model, messages: job.messages, maxTokens: job.maxTokens, temperature: job.temperature, signal: ac.signal,
+          })) {
+            if (ch.delta) { full += ch.delta; await reply({ delta: ch.delta }); }
+            if (ch.done) full = ch.content || full;
+          }
+        } else {
+          const r = await 模型调用.chat(p, {
+            model: job.model, messages: job.messages, maxTokens: job.maxTokens, temperature: job.temperature, signal: ac.signal,
+          });
+          full = r?.content || '';
+        }
+        await reply({ done: true, content: full });
+      } catch (e) {
+        if (!ac.signal.aborted) await reply({ error: e.message || String(e) });
+      } finally { this.桥取消.delete(job.reqId); }
+    });
+    es.onerror = () => {
+      try { es.close(); } catch {}
+      if (this.桥 === es) this.桥 = null;
+      setTimeout(() => { this.刷新().catch(() => {}); }, 5000);
+    };
+  },
+  断网页桥() {
+    if (this.桥) { try { this.桥.close(); } catch {} this.桥 = null; }
+    this.桥取消.forEach(ac => ac.abort()); this.桥取消.clear();
+  },
+  async 同步订阅(driverId) {
+    const st = await this.刷新();
+    if (!st) throw new Error('本机网关未运行');
+    const targets = (st.drivers || []).filter(d => d.loggedIn && (!driverId || d.id === driverId));
+    if (!targets.length) throw new Error(driverId ? '该渠道尚未登录' : '还没有已登录的渠道可同步');
+    const synced = (await ctx.kv.get(this.同步键)) || {}, results = [];
+    for (const d of targets) {
+      const name = d.providerName || ('订阅 · ' + d.name);
+      const old = await 厂商配置.找(name);
+      const patch = { endpoint: d.endpoint, apiKey: '', protocol: 'openai-compatible', toolMode: 'native' };
+      let p = old ? await 厂商配置.更新(old.id, patch) : await 厂商配置.新增(Object.assign({ name }, patch));
+      let pulled = '';
+      try { p = await 厂商配置.拉模型(p); pulled = `拉到 ${p.models.length} 个模型`; }
+      catch (e) { pulled = '模型拉取失败: ' + e.message; }
+      synced[d.id] = { providerName: p.name, providerId: p.id, endpoint: d.endpoint, at: Date.now() };
+      results.push({ driver: d.id, provider: p.name, models: (p.models || []).length, pulled });
+    }
+    await ctx.kv.set(this.同步键, synced);
+    return { ok: true, synced: results };
+  },
+  async 清理同步() {
+    const synced = (await ctx.kv.get(this.同步键)) || {}, removed = [];
+    for (const rec of Object.values(synced)) {
+      const old = await 厂商配置.找(rec.providerName);
+      if (old) { await 厂商配置.删除(old.id); removed.push(old.name); }
+    }
+    await ctx.kv.set(this.同步键, {});
+    return { ok: true, removed };
+  },
+};
+
 const 设置界面 = {
-  curId: null, 说: null, 手填: {}, 加: {}, 开: false,
+  curId: null, 说: null, 手填: {}, 加: {}, 开: false, tab: 'providers', 显密: {},
   async 渲染(host) {
     const list = await 厂商配置.列表(), did = await 厂商配置.默认id(), S = 设置界面;
     if (!list.some(p => p.id === S.curId)) S.curId = did || (list[0] && list[0].id) || null;
     const p = list.find(x => x.id === S.curId), { esc, 下拉 } = 选模型, 选 = '<select class="ai-in" data-f="';
     const 框 = (f, v, ph, more) => '<input class="ai-in" data-f="' + esc(f) + '" value="' + esc(v)
       + '" placeholder="' + esc(ph) + '"' + (more || '') + '>';
-    // 下拉用 select 不用 datalist(白底, 还按已填的字过滤, 选过就看不到别的);
-    // 没候选或点过「手填」的格给输入框。候选 = [[值, 显示的字]]
+    // 通用密码框: 保留浏览器自动填充, 右侧自带 👁 显隐 + 📋 复制
+    const 密框 = (id, v, ph, dataAttr) => {
+      const show = !!S.显密[id];
+      return '<div class="ai-pw"><input class="ai-in" ' + dataAttr + ' data-pwid="' + esc(id) + '" type="'
+        + (show ? 'text' : 'password') + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '">'
+        + '<button type="button" class="ai-btn ai-ico" data-pw="toggle" data-pwid="' + esc(id)
+        + '" title="' + (show ? '隐藏' : '显示') + '">' + (show ? '🙈' : '👁') + '</button>'
+        + '<button type="button" class="ai-btn ai-ico" data-pw="copy" data-pwid="' + esc(id)
+        + '" title="复制">📋</button></div>';
+    };
     const 选框 = (f, v, 候选, ph) => !候选.length || S.手填[f] ? 框(f, v, `${ph}: 手填`)
       : 下拉(f, v, [['', `(${ph})`]].concat(候选, [['✎', '✎ 手填…']]), 选);
     const 钮 = (act, text, cls, 警告, k) => '<button class="ai-btn ' + (cls || '') + '" data-act="' + act + '"'
-      + (k ? ` data-k="${k}"` : '') + (警告 ? ` data-warn="${esc(警告)}"` : '')   // 有警告的要点两下
-      + '>' + text + '</button>';
+      + (k ? ` data-k="${esc(k)}"` : '') + (警告 ? ` data-warn="${esc(警告)}"` : '') + '>' + text + '</button>';
     const 标 = text => `<label class="ai-label">${text}</label>`;
     const 行 = (...x) => `<div class="ai-row">${x.join('')}</div>`;
-    let html = '<div class="ai-bar">' + list.map(x => '<button class="ai-chip'
-      + (x.passed?.chat ? ' tested' : '') + (x.id === S.curId ? ' cur' : '') + '" data-pid="'
-      + esc(x.id) + '"><span class="dot"></span>' + esc(x.name || '(未命名)') + (x.id === did ? ' · 默认' : '')
-      + '</button>').join('') + '<button class="ai-add" data-act="add" title="添加厂商">+</button></div>';
-    if (!p) html += '<p class="ai-hint">点 + 添加一个 AI 厂商(各家大模型、中转站、本机跑的模型都行)</p>';
-    else {
-      const 表 = 厂商配置.表(p), 认得 = (协议适配[p.protocol] || {}).对话请求, 类们 = Object.keys(表), 过 = p.passed || {};
-      const 协议们 = Object.keys(协议适配).filter(k => 协议适配[k].对话请求), 音 = p.voices || {};
-      const 用 = 类们.filter(k => k === 'chat' || p.modelOf?.[k] || S.加[k]);
-      const 模型框 = k => {
-        const t = 表[k], m = k === 'chat' ? p.model : p.modelOf?.[k];
-        const vs = 音[m] || [];
-        const 二 = (t.音色 ? 选框(`voiceOf.${k}`, p.voiceOf?.[k],
-          vs.map(v => [v.id, v.name + (v.name === v.id ? '' : ` · ${v.id}`)]), '选音色')
-          + 钮('voices', '🎤 拉音色', '', '', k) : '')
-          + (t.语速 ? '<label class="ai-sp">语速'
-            + 框('speed', p.speed || 1, '1', ' type="number" step="0.1" min="0.25"') + '</label>' : '')
-          + (t.尾帧 ? 框(`尾帧.${k}`, p.adapt?.[k]?.尾帧, '尾帧字段(默认 last_image)', ' title="尾帧字段"') : '');
-        return 标(`${t.名}模型`) + 行(选框(k === 'chat' ? 'model' : `modelOf.${k}`, m,
-          厂商配置.候选(p, k).map(x => [x, x]), '选模型'), 钮('test', '⚡ 测试', '', '', k)) + (二 && 行(二));
-      };
-      const 窄 = '<select class="ai-in ai-narrow" data-', 模型名框 = (p.models || []).length
-        ? 下拉('m', '', [''].concat(p.models).map(m => [m, m]), 窄 + 'new="')
-        : '<input class="ai-in ai-narrow" data-new="m" placeholder="模型名">';
-      const 亮 = k => 过[k] && 过[k].model === (k === 'chat' ? p.model : p.modelOf?.[k]);   // 测通的就是现在选的这个
-      // 亮的是按钮(点了熄灭); 暗的只是个标记, 不做成按钮, 免得看着能点
-      const 章 = k => 亮(k) ? '<button class="ai-cap ok" data-act="off" data-k="' + k + '" title="' + esc('测通: '
-        + 过[k].model + ' · ' + new Date(过[k].at).toLocaleString() + '; 点一下熄灭') + '">✓ ' + 表[k].名 + '</button>'
-        : `<span class="ai-cap" data-k="${k}" title="还没测通: 点这一类模型右边的 ⚡ 测试">${表[k].名}</span>`;
-      html += 标('显示名称') + 行(框('name', p.name, ''), 钮('del', '🗑', 'danger', '确定删? Key 一起删'))
-        + 标('亮 = 选的模型测通了(测试键在各模型右边); 点亮的熄灭') + '<div class="ai-caps">'
-        + 用.map(章).join('') + '</div><div class="ai-result" data-r hidden></div>' + 标('API 网址(只填到版本前缀)')
-        + 行(框('endpoint', p.endpoint, 'https://api.xxx.com/v1 · 本地 http://127.0.0.1:11434/v1'),
-          钮('models', '📥 拉取全部模型'))
-        + 标('API Key') + 框('apiKey', p.apiKey, '本地模型留空', ' type="password"') + 用.map(模型框).join('')
-        + (用.length < 类们.length ? 行(下拉('加', '', [['', '＋ 加一类']]
-          .concat(类们.filter(k => !用.includes(k)).map(k => [k, 表[k].名])), 窄 + 'f="')) : '')
-        + '<details data-adv' + (S.开 || !认得 ? ' open' : '') + '><summary>⚙ 高级</summary>'
-        + (认得 && 协议们.length < 2 ? '' : 标('协议') + 下拉('protocol', p.protocol, (认得 ? []
-          : [[p.protocol, `${p.protocol} (现在没有这个协议了, 请重选; 本地模型选 OpenAI 兼容)`, 1]])
-          .concat(协议们.map(k => [k, 协议适配[k].名称])), 选))
-        + 标('转发地址(浏览器不让直连这家时填; 这家的请求全经它转, 它看得到 Key, 只填信得过的)')
-        + 框('proxy', p.proxy, 'https://…/?url={url}  ({url} 换成原网址, 不写就接在末尾)')
-        + 标('同时最多几个请求') + 框('concurrency', p.concurrency, '默认 8', ' type="number" min="1"')
-        + 标('单次最多写几 token(写大段代码被截断时调大)') + 框('maxOut', p.maxOut, '不填由厂商定', ' type="number" min="1"')
-        + 标('接口改法(JSON): 各类的路径、请求体、怎么查结果; 自动试通的写法也记在这')
-        + '<textarea class="ai-in" data-f="adapt" rows="3"'
-        + ' placeholder=\'{"music": {"path": "/xx/submit", "body": {"caption": "{prompt}"}}}\'>'
-        + esc(Object.keys(p.adapt || {}).length ? JSON.stringify(p.adapt) : '') + '</textarea>'
-        + 标('📝 模型标注(如「长文会截断」, 你和 agent 都看得到; 清空即删)')
-        + Object.keys(p.notes || {}).map(m => 行('<input class="ai-in ai-narrow" value="' + esc(m)
-          + '" disabled>', 框(`notes.${m}`, p.notes[m], ''))).join('')
-        + 行(模型名框, '<input class="ai-in" data-new="t" placeholder="一句话标注">', 钮('note', '＋ 添加'))
-        + '<label class="ai-check"><input type="checkbox" data-f="toolMode"'
-        + (p.toolMode === 'text' ? ' checked' : '') + '> 模型不支持原生工具调用(用文字围栏)</label></details>'
-        + '<div class="ai-acts">' + (p.id === did ? '<span class="ai-hint" title="没指定厂商的调用都用这一家">✓ 这是默认厂商'
-          + '</span>' : 钮('default', '设为默认'))   // 已经是默认就不再画成能点的键
-        + 钮('pack', '💾 打包配置版', '', '含全部明文 Key, 再点导出') + '</div>';   // 没厂商就没东西可打包, 不给这个键
+    let html = '<div class="ai-tabs">'
+      + '<button class="ai-tab' + (S.tab === 'providers' ? ' cur' : '') + '" data-tab="providers">🧠 厂商配置</button>'
+      + '<button class="ai-tab' + (S.tab === 'sub' ? ' cur' : '') + '" data-tab="sub">🔑 订阅与网关'
+      + (订阅网关.ok ? ' · 在线' : '') + '</button></div>';
+    if (S.tab === 'sub') {
+      const st = 订阅网关.状态, synced = (await ctx.kv.get(订阅网关.同步键)) || {}, expMap = await 订阅网关.读暴露表();
+      const 可聚 = 订阅网关.可聚厂商(list);
+      html += '<div class="ai-result" data-r hidden></div>'
+        + '<div class="ai-sub-card"><div class="ai-sub-hd"><strong>🌐 本地聚合网关（私有 OpenRouter）</strong>'
+        + '<span class="ai-cap ' + (订阅网关.ok ? 'ok' : '') + '">'
+        + (订阅网关.ok ? (st.expose ? '局域网外放中' : '仅本机免密') : '未连接') + '</span><span class="sp"></span>'
+        + 钮('gwRefresh', '🔄 刷新') + (订阅网关.ok ? '' : 钮('gwStart', '▶ 启动网关', 'pri')) + '</div>'
+        + 标('网关地址（与 colony-local 同进程运行，默认 http://127.0.0.1:4135）')
+        + 行('<input class="ai-in" data-gw="url" value="' + esc(订阅网关.url) + '" placeholder="http://127.0.0.1:4135">',
+          钮('gwSaveUrl', '保存并重连'));
+      if (订阅网关.ok && st) {
+        const lan = (st.lanEndpoints || [])[0] || '';
+        html += 标('本机接入地址（OpenAI /v1 与 Anthropic /v1/messages 通用，本机免密，留空或任意 Key 均通）')
+          + 行('<input class="ai-in" value="' + esc(st.localEndpoint) + '" readonly>',
+            钮('copyVal', '📋 复制', '', '', st.localEndpoint))
+          + '<label class="ai-check"><input type="checkbox" data-gw="expose"' + (st.expose ? ' checked' : '')
+          + '> 允许局域网外放（绑定 0.0.0.0，默认关闭；开启后所有请求须带下方外放密码）</label>';
+        if (st.expose && lan) {
+          html += 标('局域网接入地址') + 行('<input class="ai-in" value="' + esc(lan) + '" readonly>',
+            钮('copyVal', '📋 复制', '', '', lan));
+        }
+        html += 标('外放密码（开启局域网外放时校验，支持直接编辑自定义）')
+          + '<div class="ai-row" style="align-items:stretch"><div style="flex:1">'
+          + 密框('gw-key', st.apiKey || '', '输入自定义外放密码', 'data-gw="apiKey"') + '</div>'
+          + 钮('gwSaveKey', '保存密码') + 钮('gwRandKey', '🎲 随机') + '</div>';
+        if (可聚.length) {
+          html += 标('聚合进 4135 网关的常规 API 厂商（勾选后外部工具也能经 4135 调它们，不暴露你的上游 Key）')
+            + '<div class="ai-caps">' + 可聚.map(x => {
+              const on = expMap[x.id] !== false;
+              return '<button class="ai-cap ' + (on ? 'ok' : '') + '" data-act="gwTogProv" data-k="' + esc(x.id)
+                + '">' + (on ? '✓ ' : '＋ ') + esc(x.name) + '</button>';
+            }).join('') + 钮('gwPushProv', '同步厂商到网关') + '</div>';
+        }
+      } else {
+        const pList = await 插件订阅.列表();
+        html += '<p class="ai-hint" style="margin-top:8px">未连上本机网关 ' + esc(订阅网关.url)
+          + (插件订阅.可用 ? '；已自动切换到 <strong>🧩 纯插件订阅模式</strong>（手机浏览器装扩展也可用，支持 4 家 OAuth；Cursor 需本机）。'
+            : '。启动 colony-local.cjs 可解锁 5 家订阅与 4135 聚合网关；手机端装 Colony Bridge 扩展可解锁 4 家免本机订阅。') + '</p></div>';
+        if (插件订阅.可用 && pList.length) {
+          const pLogged = pList.filter(d => d.loggedIn).length;
+          html += '<div class="ai-sub-hd" style="margin-top:12px"><strong>🧩 纯插件订阅（' + pLogged + '/' + pList.length
+            + ' 已登录 · 无需本机进程）</strong><span class="sp"></span><span class="ai-cap">Cursor 需本机</span></div>';
+          for (const d of pList) {
+            const pend = d.loginSession?.state === 'pending';
+            const tagCls = d.loggedIn ? 'ok' : (pend ? 'wait' : '');
+            const tagTxt = d.loggedIn ? '已登录(插件)' : (pend ? '等待授权…' : '未登录');
+            html += '<div class="ai-sub-card"><div class="ai-sub-hd"><strong>' + esc(d.name) + '</strong>'
+              + '<span class="ai-cap ' + tagCls + '">' + esc(tagTxt) + '</span><span class="sp"></span>';
+            if (pend) html += 钮('psubCancel', '取消', '', '', d.id);
+            else {
+              html += 钮('psubLogin', d.loggedIn ? '重新登录' : '插件登录', d.loggedIn ? '' : 'pri', '', d.id);
+              if (d.loggedIn) html += 钮('psubSync', '同步到厂商', '', '', d.id) + 钮('psubLogout', '退出', 'danger', '', d.id);
+            }
+            html += '</div><p class="ai-hint" style="margin:6px 0 0">' + esc(d.desc) + '</p>';
+            if (d.account?.email) html += '<p class="ai-hint" style="margin:4px 0 0">账号：' + esc(d.account.email) + '</p>';
+            if (pend) {
+              html += '<div class="ai-sub-box">' + esc(d.loginSession.message || '请在授权页完成确认');
+              if (d.loginSession.userCode)
+                html += '<div class="ai-row"><span class="ai-sub-code">' + esc(d.loginSession.userCode) + '</span>'
+                  + 钮('copyVal', '📋 复制验证码', '', '', d.loginSession.userCode) + '</div>';
+              if (d.loginSession.url)
+                html += '<div style="margin-top:4px"><a href="' + esc(d.loginSession.url)
+                  + '" target="_blank" rel="noopener">↗ 打开授权链接</a></div>';
+              html += '</div>';
+            }
+            html += '</div>';
+          }
+        }
+      }
+      if (订阅网关.ok) html += '</div>';
+      if (订阅网关.ok && st) {
+        const logged = (st.drivers || []).filter(d => d.loggedIn).length;
+        html += '<div class="ai-sub-hd" style="margin-top:12px"><strong>🔑 订阅账号（' + logged + '/'
+          + (st.drivers || []).length + ' 已登录）</strong><span class="sp"></span>'
+          + 钮('subSyncAll', '同步全部到厂商', 'pri') + 钮('subClean', '清理已同步') + '</div>';
+        for (const d of (st.drivers || [])) {
+          const pend = d.loginSession?.state === 'pending', syn = synced[d.id], modes = d.authModes || [];
+          const tagCls = d.loggedIn ? 'ok' : (pend ? 'wait' : '');
+          const tagTxt = d.loggedIn ? ('已登录' + (d.account?.plan ? ' · ' + d.account.plan : '')) : (pend ? '等待授权…' : '未登录');
+          html += '<div class="ai-sub-card"><div class="ai-sub-hd"><strong>' + esc(d.name) + '</strong>'
+            + '<span class="ai-cap ' + tagCls + '">' + esc(tagTxt) + '</span>'
+            + (syn ? '<span class="ai-cap ok">已同步</span>' : '') + '<span class="sp"></span>';
+          if (pend) html += 钮('subCancel', '取消登录', '', '', d.id);
+          else {
+            if (modes.includes('browser') || modes.includes('device'))
+              html += 钮('subLogin', d.loggedIn ? '重新登录' : '浏览器登录', d.loggedIn ? '' : 'pri', '', d.id);
+            if (modes.includes('apiKey')) html += 钮('subTogKey', '粘贴 Key', '', '', d.id);
+            if (d.loggedIn) html += 钮('subSync', '同步模型', '', '', d.id) + 钮('subLogout', '退出', 'danger', '', d.id);
+          }
+          html += '</div>';
+          if (d.desc) html += '<p class="ai-hint" style="margin:6px 0 0">' + esc(d.desc) + '</p>';
+          if (d.account?.email) html += '<p class="ai-hint" style="margin:4px 0 0">账号：' + esc(d.account.email) + '</p>';
+          if (pend) {
+            html += '<div class="ai-sub-box">' + esc(d.loginSession.message || '请在浏览器中完成授权');
+            if (d.loginSession.userCode)
+              html += '<div class="ai-row"><span class="ai-sub-code">' + esc(d.loginSession.userCode) + '</span>'
+                + 钮('copyVal', '📋 复制验证码', '', '', d.loginSession.userCode) + '</div>';
+            if (d.loginSession.url)
+              html += '<div style="margin-top:4px"><a href="' + esc(d.loginSession.url)
+                + '" target="_blank" rel="noopener">↗ 打开授权链接</a></div>';
+            html += '</div>';
+          }
+          if (订阅网关.开Key[d.id]) {
+            html += '<div class="ai-row" style="margin-top:8px"><div style="flex:1">'
+              + 密框('subk-' + d.id, '', '粘贴 ' + d.name + ' API Key', 'data-subk="' + esc(d.id) + '"') + '</div>'
+              + 钮('subSubmitKey', '验证登录', 'pri', '', d.id) + '</div>';
+          }
+          html += '</div>';
+        }
+      }
+    } else {
+      html += '<div class="ai-bar">' + list.map(x => '<button class="ai-chip'
+        + (x.passed?.chat ? ' tested' : '') + (x.id === S.curId ? ' cur' : '') + '" data-pid="'
+        + esc(x.id) + '"><span class="dot"></span>' + esc(x.name || '(未命名)') + (x.id === did ? ' · 默认' : '')
+        + '</button>').join('') + '<button class="ai-add" data-act="add" title="添加厂商">+</button></div>';
+      if (!p) html += '<p class="ai-hint">点 + 添加一个 AI 厂商(各家大模型、中转站、本机跑的模型都行), 或切到上方「🔑 订阅与网关」登录订阅账号</p>';
+      else {
+        const 表 = 厂商配置.表(p), 认得 = (协议适配[p.protocol] || {}).对话请求, 类们 = Object.keys(表), 过 = p.passed || {};
+        const 协议们 = Object.keys(协议适配).filter(k => 协议适配[k].对话请求), 音 = p.voices || {};
+        const 用 = 类们.filter(k => k === 'chat' || p.modelOf?.[k] || S.加[k]);
+        const 源 = (() => { try { return p.endpoint ? new URL(p.endpoint).origin : ''; } catch { return ''; } })();
+        const 通路 = p.proxy ? '经转发' : ({ plugin: '经插件免跨域', local: '经本机免跨域' }[网络请求.通道.get(源)] || '');
+        const 模型框 = k => {
+          const t = 表[k], m = k === 'chat' ? p.model : p.modelOf?.[k];
+          const vs = 音[m] || [];
+          const 二 = (t.音色 ? 选框(`voiceOf.${k}`, p.voiceOf?.[k],
+            vs.map(v => [v.id, v.name + (v.name === v.id ? '' : ` · ${v.id}`)]), '选音色')
+            + 钮('voices', '🎤 拉音色', '', '', k) : '')
+            + (t.语速 ? '<label class="ai-sp">语速'
+              + 框('speed', p.speed || 1, '1', ' type="number" step="0.1" min="0.25"') + '</label>' : '')
+            + (t.尾帧 ? 框(`尾帧.${k}`, p.adapt?.[k]?.尾帧, '尾帧字段(默认 last_image)', ' title="尾帧字段"') : '');
+          return 标(`${t.名}模型`) + 行(选框(k === 'chat' ? 'model' : `modelOf.${k}`, m,
+            厂商配置.候选(p, k).map(x => [x, x]), '选模型'), 钮('test', '⚡ 测试', '', '', k)) + (二 && 行(二));
+        };
+        const 窄 = '<select class="ai-in ai-narrow" data-', 模型名框 = (p.models || []).length
+          ? 下拉('m', '', [''].concat(p.models).map(m => [m, m]), 窄 + 'new="')
+          : '<input class="ai-in ai-narrow" data-new="m" placeholder="模型名">';
+        const 亮 = k => 过[k] && 过[k].model === (k === 'chat' ? p.model : p.modelOf?.[k]);
+        const 章 = k => 亮(k) ? '<button class="ai-cap ok" data-act="off" data-k="' + k + '" title="' + esc('测通: '
+          + 过[k].model + ' · ' + new Date(过[k].at).toLocaleString() + '; 点一下熄灭') + '">✓ ' + 表[k].名 + '</button>'
+          : `<span class="ai-cap" data-k="${k}" title="还没测通: 点这一类模型右边的 ⚡ 测试">${表[k].名}</span>`;
+        html += 标('显示名称') + 行(框('name', p.name, ''), 钮('del', '🗑', 'danger', '确定删? Key 一起删'))
+          + 标('亮 = 选的模型测通了(测试键在各模型右边); 点亮的熄灭' + (通路 ? ` · 当前通道: ${通路}` : '')) + '<div class="ai-caps">'
+          + 用.map(章).join('') + '</div><div class="ai-result" data-r hidden></div>' + 标('API 网址(只填到版本前缀)')
+          + 行(框('endpoint', p.endpoint, 'https://api.xxx.com/v1 · 本地 http://127.0.0.1:4135/v1'),
+            钮('models', '📥 拉取全部模型'))
+          + 标('API Key') + 密框('ak-' + p.id, p.apiKey, '本地模型 / 本机订阅 / 网页模型留空', 'data-f="apiKey"')
+          + 用.map(模型框).join('')
+          + (用.length < 类们.length ? 行(下拉('加', '', [['', '＋ 加一类']]
+            .concat(类们.filter(k => !用.includes(k)).map(k => [k, 表[k].名])), 窄 + 'f="')) : '')
+          + '<details data-adv' + (S.开 || !认得 ? ' open' : '') + '><summary>⚙ 高级</summary>'
+          + (认得 && 协议们.length < 2 ? '' : 标('协议') + 下拉('protocol', p.protocol, (认得 ? []
+            : [[p.protocol, `${p.protocol} (现在没有这个协议了, 请重选; 本地模型选 OpenAI 兼容)`, 1]])
+            .concat(协议们.map(k => [k, 协议适配[k].名称])), 选))
+          + 标('转发地址(有插件或本机时自动免跨域; 纯手机无插件无本机时可在这填自建反代)')
+          + 框('proxy', p.proxy, 'https://…/?url={url}  ({url} 换成原网址, 不写就接在末尾)')
+          + 标('同时最多几个请求') + 框('concurrency', p.concurrency, '默认 8', ' type="number" min="1"')
+          + 标('单次最多写几 token(写大段代码被截断时调大)') + 框('maxOut', p.maxOut, '不填由厂商定', ' type="number" min="1"')
+          + 标('接口改法(JSON): 各类的路径、请求体、怎么查结果; 自动试通的写法也记在这')
+          + '<textarea class="ai-in" data-f="adapt" rows="3"'
+          + ' placeholder=\'{"music": {"path": "/xx/submit", "body": {"caption": "{prompt}"}}}\'>'
+          + esc(Object.keys(p.adapt || {}).length ? JSON.stringify(p.adapt) : '') + '</textarea>'
+          + 标('📝 模型标注(如「长文会截断」, 你和 agent 都看得到; 清空即删)')
+          + Object.keys(p.notes || {}).map(m => 行('<input class="ai-in ai-narrow" value="' + esc(m)
+            + '" disabled>', 框(`notes.${m}`, p.notes[m], ''))).join('')
+          + 行(模型名框, '<input class="ai-in" data-new="t" placeholder="一句话标注">', 钮('note', '＋ 添加'))
+          + '<label class="ai-check"><input type="checkbox" data-f="toolMode"'
+          + (p.toolMode === 'text' ? ' checked' : '') + '> 模型不支持原生工具调用(用文字围栏)</label></details>'
+          + '<div class="ai-acts">' + (p.id === did ? '<span class="ai-hint" title="没指定厂商的调用都用这一家">✓ 这是默认厂商'
+            + '</span>' : 钮('default', '设为默认'))
+          + 钮('pack', '💾 打包配置版', '', '含全部明文 Key, 再点导出') + '</div>';
+      }
     }
-    // 存一格就整张重画: 正在打字的那一格连同没存的字、光标放回去, 不然点了下一格接着打的字就丢了
-    const a = typeof document !== 'undefined' && document.activeElement, 同 = x => x.dataset.f === a.dataset.f
-      && x.dataset.new === a.dataset.new, 焦 = a && host.contains(a) && (a.dataset.f || a.dataset.new) && a;
+    const a = typeof document !== 'undefined' && document.activeElement;
+    const 同 = x => x.dataset.f === a.dataset.f && x.dataset.new === a.dataset.new && x.dataset.gw === a.dataset.gw;
+    const 焦 = a && host.contains(a) && (a.dataset.f || a.dataset.new || a.dataset.gw) && a;
     host.innerHTML = html;
-    const 回 = 焦 && [...host.querySelectorAll('[data-f],[data-new]')].find(同);
+    const 回 = 焦 && [...host.querySelectorAll('[data-f],[data-new],[data-gw]')].find(同);
     if (回) {
       if (回.tagName === 焦.tagName && !/^(select|checkbox)/.test(回.type) && 回.value !== 焦.value) {
         回.value = 焦.value;
-        回.dataset.改 = 1;   // 没存的字: 离开这一格时补一次存(浏览器只在人打了字时才发 change)
+        回.dataset.改 = 1;
       }
       回.focus();
       try { 回.setSelectionRange(焦.selectionStart, 焦.selectionEnd); } catch (e) { }
@@ -1088,105 +1780,241 @@ const 设置界面 = {
     host.onfocusout = e => {
       if (e.target.dataset.改) e.target.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    const adv = host.querySelector('[data-adv]');   // 存盘会整张重画, 得记住「高级」开着没
+    const adv = host.querySelector('[data-adv]');
     if (adv) adv.ontoggle = () => { S.开 = adv.open; };
-    const say = (text, bad) => {   // 记在 S.说: 存盘会重画, 重画后这句还得在; 用户下次动手才清
+    const say = (text, bad) => {
       S.说 = { text, bad };
       const r = host.querySelector('[data-r]');
       if (!r) return;
       r.hidden = false;
       r.className = `ai-result ${bad ? 'bad' : 'ok'}`;
       r.textContent = text;
-      if (r.scrollIntoView) r.scrollIntoView({ block: 'nearest' });   // 点的键在下面时, 上面的这句也得看得到
+      if (r.scrollIntoView) r.scrollIntoView({ block: 'nearest' });
     };
+    const hasPending = S.tab === 'sub' && (订阅网关.状态?.drivers || []).some(d => d.loginSession?.state === 'pending');
+    if (hasPending && !订阅网关.轮询) {
+      订阅网关.轮询 = setInterval(async () => {
+        const before = (订阅网关.状态?.drivers || []).filter(d => d.loginSession?.state === 'pending').map(d => d.id);
+        await 订阅网关.刷新();
+        const done = (订阅网关.状态?.drivers || []).filter(d => before.includes(d.id) && d.loggedIn);
+        for (const d of done) {
+          const r = await 订阅网关.同步订阅(d.id).catch(() => null);
+          S.说 = { text: `✓ ${d.name} 登录成功${r ? `，已同步 ${r.synced[0]?.models || 0} 个模型` : ''}` };
+        }
+        await S.渲染(host);
+      }, 2200);
+    } else if (!hasPending && 订阅网关.轮询) {
+      clearInterval(订阅网关.轮询); 订阅网关.轮询 = null;
+    }
     // ✂ 语音
     const 拉音色 = async (q, k) => {
-      const got = await 朗读.音色(q, k, {}), m = got.model, 借 = got.asked.find(x => /^借 /.test(x));
-      say(got.voices.length ? '✓ 「' + m + '」' + (借 ? `自己拉不到音色, ${借}` : '拉到') + ' ' + got.voices.length
-        + ' 个音色, 在音色框里选'
-        : `没拉到「${m}」的音色(${got.asked.join('; ')}): 照厂商文档手填`);
+      const got = await 朗读.音色(q, k), m = q.modelOf?.[k];
+      await 厂商配置.更新(q.id, { voices: { [m]: got } });
+      say(`✓ 拉到 ${got.length} 个音色`);
     };
     // ✂ 语音 完
     if (S.说) say(S.说.text, S.说.bad);
     host.onchange = async e => {
-      const el = e.target, f = el.dataset.f, v = el.type === 'checkbox' ? el.checked : el.value.trim();
-      if (!f) return;
+      const el = e.target;
+      if (el.dataset.gw === 'expose') {
+        const on = el.checked;
+        const keyInp = host.querySelector('[data-gw="apiKey"]');
+        const apiKey = keyInp ? keyInp.value.trim() : '';
+        try {
+          if (on && !apiKey) throw new Error('开启局域网外放前请先填写非空的外放密码');
+          await 订阅网关.设网关({ expose: on, apiKey });
+          say(on ? '✓ 已开启局域网外放（0.0.0.0），所有外部请求须携带外放密码' : '✓ 已关闭局域网外放，切回仅本机免密');
+        } catch (err) { say(`✗ ${err.message}`, true); }
+        return await S.渲染(host);
+      }
+      const f = el.dataset.f, v = el.type === 'checkbox' ? el.checked : el.value.trim();
+      if (!f || !p) return;
       delete el.dataset.改;
       S.说 = null;
       if (f === '加') return v && (S.加[v] = true, S.渲染(host));
       const 存 = patch => 厂商配置.更新(p.id, patch), [表名, 键] = f.split(/\.(.*)/);
       try {
-        if (v === '✎') {   // 选了「手填」: 换输入框, 值不动
-          S.手填[f] = true;
-          await S.渲染(host);
-        } else if (f === 'toolMode') await 存({ toolMode: v ? 'text' : 'native' });
-        // 原协议认不出时重选协议留着原网址, 这样的记录重选一下就能用
+        if (v === '✎') { S.手填[f] = true; await S.渲染(host); }
+        else if (f === 'toolMode') await 存({ toolMode: v ? 'text' : 'native' });
         else if (f === 'protocol')
           await 存({ protocol: v, endpoint: (协议适配[p.protocol] || {}).对话请求 ? 协议适配[v].默认端点 : p.endpoint });
         else if (/^(concurrency|speed|maxOut)$/.test(f)) await 存({ [f]: Number(v) || undefined });
-        else if (f === 'adapt')   // 删掉的类要写 null 才删得掉
+        else if (f === 'adapt')
           await 存({ adapt: Object.assign(Object.fromEntries(Object.keys(p.adapt || {}).map(k => [k, null])),
             v ? JSON.parse(v) : {}) });
         else if (表名 === '尾帧') await 存({ adapt: { [键]: 厂商配置.表(p)[键].尾帧(p.adapt?.[键], v) } });
         else if (!f.includes('.')) await 存({ [f]: v });
-        else {   // modelOf.类 / voiceOf.类 / notes.模型; 换了带音色那类的模型就顺手拉音色
+        else {
           const q = await 存({ [表名]: { [键]: v || null } });
           if (表名 === 'modelOf' && v && 厂商配置.表(p)[键].音色)
-            await 拉音色(q, 键).catch(e => say(e.message));   // 顺手拉的, 没拉到只是说一声, 不算出错
+            await 拉音色(q, 键).catch(e => say(e.message));
         }
-      } catch (err) {
-        say(`✗ ${err.message}`, true);
-      }
+      } catch (err) { say(`✗ ${err.message}`, true); }
     };
     host.onclick = async e => {
+      const pwBtn = e.target.closest('[data-pw]');
+      if (pwBtn) {
+        const id = pwBtn.dataset.pwid, inp = host.querySelector(`input[data-pwid="${CSS.escape(id)}"]`);
+        if (pwBtn.dataset.pw === 'toggle') {
+          S.显密[id] = !S.显密[id];
+          if (inp) inp.type = S.显密[id] ? 'text' : 'password';
+          pwBtn.textContent = S.显密[id] ? '🙈' : '👁';
+          pwBtn.title = S.显密[id] ? '隐藏' : '显示';
+        } else if (pwBtn.dataset.pw === 'copy' && inp) {
+          if (!inp.value) return say('当前密码为空，无可复制内容', true);
+          await navigator.clipboard.writeText(inp.value).catch(() => {});
+          say('✓ 已复制到剪贴板');
+        }
+        return;
+      }
+      const tabBtn = e.target.closest('[data-tab]');
+      if (tabBtn) {
+        S.tab = tabBtn.dataset.tab; S.说 = null;
+        if (S.tab === 'sub') await 订阅网关.刷新();
+        return await S.渲染(host);
+      }
       const b = e.target.closest('[data-act],[data-pid]');
       if (!b) return;
-      if (b.dataset.warn && !b.dataset.sure) {   // 第一下只变成警告
-        b.dataset.t = b.textContent;
-        b.textContent = b.dataset.warn;
+      if (b.dataset.warn && !b.dataset.sure) {
+        b.dataset.t = b.textContent; b.textContent = b.dataset.warn;
         b.classList.add('warn');
         b.dataset.sure = setTimeout(() => S.复原(b), 3000);
         return;
       }
-      if (b.dataset.sure) S.复原(b);   // 第二下: 按钮先复原再做, 做砸了也不会一直停在警告上
-      const act = b.dataset.act;
+      if (b.dataset.sure) S.复原(b);
+      const act = b.dataset.act, k = b.dataset.k;
       S.说 = null;
       try {
-        await 厂商配置.队列;   // 刚改的字段可能还在存: 等存完再按现在的记录办, 不然用的是画界面时的旧 Key
+        if (act === 'copyVal') {
+          await navigator.clipboard.writeText(k || '').catch(() => {});
+          return say('✓ 已复制: ' + k);
+        }
+        if (act === 'gwRefresh') {
+          await 订阅网关.刷新();
+          S.说 = 订阅网关.ok ? { text: '✓ 本机网关在线' } : { text: '✗ ' + 订阅网关.错, bad: true };
+          return await S.渲染(host);
+        }
+        if (act === 'gwStart') {
+          say('⋯ 正在启动本机网关');
+          await 订阅网关.启动();
+          S.说 = { text: '✓ 本机网关已启动' };
+          return await S.渲染(host);
+        }
+        if (act === 'gwSaveUrl') {
+          const u = host.querySelector('[data-gw="url"]')?.value;
+          await 订阅网关.设址(u); await 订阅网关.刷新();
+          S.说 = 订阅网关.ok ? { text: '✓ 已连上 ' + 订阅网关.url } : { text: '✗ ' + 订阅网关.错, bad: true };
+          return await S.渲染(host);
+        }
+        if (act === 'gwSaveKey') {
+          const apiKey = (host.querySelector('[data-gw="apiKey"]')?.value || '').trim();
+          if (!apiKey) throw new Error('外放密码不能为空');
+          await 订阅网关.设网关({ apiKey });
+          S.说 = { text: '✓ 已保存自定义外放密码' };
+          return await S.渲染(host);
+        }
+        if (act === 'gwRandKey') {
+          await 订阅网关.设网关({ regenerateKey: true });
+          S.说 = { text: '✓ 已重新生成随机外放密码' };
+          return await S.渲染(host);
+        }
+        if (act === 'gwTogProv') {
+          const map = await 订阅网关.读暴露表();
+          await 订阅网关.设厂商暴露(k, !(map[k] !== false));
+          S.说 = { text: '✓ 已更新网关聚合厂商' };
+          return await S.渲染(host);
+        }
+        if (act === 'gwPushProv') {
+          const r = await 订阅网关.推厂商();
+          S.说 = { text: `✓ 已同步 ${r.exposedCount || 0} 家常规厂商到 4135 网关` };
+          return await S.渲染(host);
+        }
+        if (act === 'subLogin') {
+          const r = await 订阅网关.请('/admin/login/' + encodeURIComponent(k), { body: { mode: 'browser' } });
+          await 订阅网关.刷新();
+          if (r.url) window.open(r.url, '_blank', 'noopener');
+          S.说 = { text: r.message || '已打开浏览器授权页，完成后自动同步' };
+          return await S.渲染(host);
+        }
+        if (act === 'subCancel') {
+          await 订阅网关.请('/admin/cancel-login/' + encodeURIComponent(k), { method: 'POST' });
+          await 订阅网关.刷新();
+          S.说 = { text: '已取消登录' };
+          return await S.渲染(host);
+        }
+        if (act === 'subTogKey') { 订阅网关.开Key[k] = !订阅网关.开Key[k]; return await S.渲染(host); }
+        if (act === 'subSubmitKey') {
+          const apiKey = (host.querySelector(`[data-subk="${CSS.escape(k)}"]`)?.value || '').trim();
+          if (!apiKey) throw new Error('请先输入 API Key');
+          await 订阅网关.请('/admin/login/' + encodeURIComponent(k), { body: { mode: 'apiKey', apiKey }, timeout: 25000 });
+          订阅网关.开Key[k] = false;
+          const syn = await 订阅网关.同步订阅(k);
+          S.说 = { text: '✓ 登录成功，已同步 ' + (syn.synced[0]?.models || 0) + ' 个模型' };
+          return await S.渲染(host);
+        }
+        if (act === 'subSync') {
+          const r = await 订阅网关.同步订阅(k);
+          S.说 = { text: `✓ 已同步 ${r.synced[0]?.provider}（${r.synced[0]?.models} 个模型）` };
+          return await S.渲染(host);
+        }
+        if (act === 'subSyncAll') {
+          const r = await 订阅网关.同步订阅();
+          S.说 = { text: '✓ 已同步 ' + r.synced.map(x => `${x.provider}(${x.models})`).join('、') };
+          return await S.渲染(host);
+        }
+        if (act === 'subLogout') {
+          await 订阅网关.请('/admin/logout/' + encodeURIComponent(k), { method: 'POST' });
+          await 订阅网关.刷新();
+          S.说 = { text: '已退出该订阅渠道' };
+          return await S.渲染(host);
+        }
+        if (act === 'subClean') {
+          const r = await 订阅网关.清理同步();
+          S.说 = { text: r.removed.length ? ('已清理：' + r.removed.join('、')) : '没有可清理的同步厂商' };
+          return await S.渲染(host);
+        }
+        if (act === 'psubLogin') {
+          const r = await 插件订阅.登录(k);
+          if (r.url && 插件订阅.表[k]?.mode === 'device') window.open(r.url, '_blank', 'noopener');
+          S.说 = { text: r.message || '请在打开的授权页完成登录' };
+          return await S.渲染(host);
+        }
+        if (act === 'psubCancel') { await 插件订阅.取消(k); S.说 = { text: '已取消插件登录' }; return await S.渲染(host); }
+        if (act === 'psubSync') {
+          const r = await 插件订阅.同步(k);
+          S.说 = { text: `✓ 已同步 ${r.provider}（${r.models} 个模型）` };
+          return await S.渲染(host);
+        }
+        if (act === 'psubLogout') { await 插件订阅.退出(k); S.说 = { text: '已退出该纯插件订阅' }; return await S.渲染(host); }
+        await 厂商配置.队列;
         const p = await 厂商配置.找(S.curId), 存 = patch => 厂商配置.更新(p.id, patch);
-        if (b.dataset.pid) {
-          Object.assign(S, { curId: b.dataset.pid, 手填: {}, 加: {} });
-        } else if (act === 'add') S.curId = (await 厂商配置.新增({ name: '新厂商' })).id;
+        if (b.dataset.pid) Object.assign(S, { curId: b.dataset.pid, 手填: {}, 加: {} });
+        else if (act === 'add') S.curId = (await 厂商配置.新增({ name: '新厂商' })).id;
         else if (act === 'del') return await 厂商配置.删除(p.id);
         else if (act === 'default') return await 厂商配置.设默认(p.id);
-        else if (act === 'voices') return await 拉音色(p, b.dataset.k);
-        else if (act === 'off') return await 存({ passed: { [b.dataset.k]: null } });
+        else if (act === 'voices') return await 拉音色(p, k);
+        else if (act === 'off') return await 存({ passed: { [k]: null } });
         else if (act === 'note') {
-          const 新 = k => host.querySelector(`[data-new="${k}"]`).value.trim(), m = 新('m'), t = 新('t');
-          // 缺一样就说缺什么, 不重画(重画会把已经写的那句清掉)
+          const 新 = x => host.querySelector(`[data-new="${x}"]`).value.trim(), m = 新('m'), t = 新('t');
           if (!m || !t) return say(`先${m ? '写标注' : '选要标注的模型'}再点 ＋ 添加`, true);
           return await 存({ notes: { [m]: t } });
         } else if (act === 'models') {
           say('⋯ 拉取中');
           return say(`✓ 拉到 ${(await 厂商配置.拉模型(p)).models.length} 个模型, 给每类选一个再测试`);
         } else if (act === 'test') {
-          const k = b.dataset.k;
           say(`⋯ 测试中${/video|music/.test(k) ? '(要等一两分钟)' : ''}`);
           const r = await 测通(p.id, k);
           return say(`✓ ${厂商配置.表(p)[k].名}测通 (模型 ${r.model}): ${r.sample}`);
         } else if (act === 'pack') return await S.打包();
         await S.渲染(host);
-      } catch (err) {
-        say(`✗ ${err.message}`, true);
-      }
+      } catch (err) { say(`✗ ${err.message}`, true); }
     };
   },
-  挂(card) {   // 画进 card, 厂商一变就重画, 回摘掉的函数。按着鼠标时换掉按钮浏览器就不发 click, 等松开再画
+  挂(card) {
     const 重画 = () => card.matches(':active')
       ? document.addEventListener('pointerup', () => setTimeout(重画), { once: true }) : 设置界面.渲染(card);
     card.className = 'ai-card';
     card.insertAdjacentHTML('beforebegin', `<style>${界面样式}</style>`);
-    // 点了别处(包括关窗的 ✕): 等着确认的那个复原
     const 别处 = e => card.querySelectorAll('[data-sure]').forEach(x => x.contains(e.target) || 设置界面.复原(x));
     document.addEventListener('ai:providers', 重画);
     document.addEventListener('pointerdown', 别处, true);
@@ -1194,13 +2022,12 @@ const 设置界面 = {
     return () => {
       document.removeEventListener('ai:providers', 重画);
       document.removeEventListener('pointerdown', 别处, true);
+      if (订阅网关.轮询) { clearInterval(订阅网关.轮询); 订阅网关.轮询 = null; }
     };
   },
-  复原(x) {   // 待确认的按钮变回原样
-    clearTimeout(+x.dataset.sure);
-    delete x.dataset.sure;
-    x.textContent = x.dataset.t;
-    x.classList.remove('warn');
+  复原(x) {
+    clearTimeout(+x.dataset.sure); delete x.dataset.sure;
+    x.textContent = x.dataset.t; x.classList.remove('warn');
   },
   async 打包() {
     try {
@@ -1213,7 +2040,7 @@ const 设置界面 = {
     } catch (err) {
       设置界面.说 = { text: `✗ 打包没成: ${err.message}`, bad: true };
     }
-    厂商配置.通知();   // 触发重画, 显示上面这句
+    厂商配置.通知();
   },
 };
 // ═ 测通 · 跟着: 厂商配置, 协议适配, 模型调用, 多模态, 各类模型 ═
@@ -1402,8 +2229,8 @@ const 打包 = {
   },
 };
 // ═ 自报 ═
-// 一处配好厂商和模型, 各块和小应用的对话、出图、语音、视频、音乐都从这里调
-// 数据 {"prefix": "settings:ai.", "label": "厂商与模型", "kind": "config", "edit": "ai.configure"}
+// 一处配好厂商、订阅账号与本地聚合网关(:4135, 私有 OpenRouter), 各块、小应用和外部工具都从这里调
+// 数据 {"prefix": "settings:ai.", "label": "厂商、订阅与网关配置", "kind": "config", "edit": "ai.configure"}
 // 现在 ai.providers
 // ═ 技能 ═
 // 只写猜不到的事实, 只有注释、不跑
@@ -1545,8 +2372,64 @@ ctx.provide('ai.remove', async a => {
   await 厂商配置.删除(p.id);
   return { removed: p.name };
 }, { desc: '删除厂商', schema: { provider: 'string' }, frames: false });
+ctx.provide('ai.gateway', async a => {
+  const act = a.action || 'status';
+  if (act === 'start') return 订阅网关.启动();
+  if (act === 'set') return 订阅网关.设网关({ expose: a.expose, apiKey: a.apiKey, regenerateKey: a.regenerateKey });
+  if (act === 'push') return 订阅网关.推厂商();
+  const st = await 订阅网关.刷新();
+  return st ? Object.assign({ online: true, url: 订阅网关.url }, st) : { online: false, url: 订阅网关.url, error: 订阅网关.错 };
+}, {
+  desc: '查或改本机聚合网关(:4135, 私有 OpenRouter / CLIProxyAPI): status|start|set(expose/apiKey/regenerateKey)|push(同步常规厂商到网关)',
+  schema: { action: 'status|start|set|push?', expose: 'boolean?', apiKey: 'string?', regenerateKey: 'boolean?' },
+  frames: false,
+});
+ctx.provide('ai.sub', async a => {
+  const act = a.action || 'status';
+  if (act === 'status') {
+    const st = await 订阅网关.刷新();
+    return st ? Object.assign({ online: true, url: 订阅网关.url }, st) : { online: false, url: 订阅网关.url, error: 订阅网关.错 };
+  }
+  if (act === 'start') return 订阅网关.启动();
+  if (act === 'login') {
+    if (!订阅网关.ok && !await 订阅网关.刷新()) await 订阅网关.启动();
+    const r = await 订阅网关.请('/admin/login/' + encodeURIComponent(a.driver), { body: { mode: a.mode, apiKey: a.apiKey }, timeout: 25000 });
+    await 订阅网关.刷新();
+    return r;
+  }
+  if (act === 'logout') {
+    const r = await 订阅网关.请('/admin/logout/' + encodeURIComponent(a.driver), { method: 'POST' });
+    await 订阅网关.刷新();
+    return r;
+  }
+  if (act === 'sync') return 订阅网关.同步订阅(a.driver);
+  if (act === 'clean') return 订阅网关.清理同步();
+  throw new Error('未知 action: ' + act);
+}, {
+  desc: '订阅账号管理(Cursor/Grok Build/Antigravity/ChatGPT/Claude): action=status|start|login|logout|sync|clean',
+  schema: { action: 'status|start|login|logout|sync|clean?', driver: 'string?', mode: 'string?', apiKey: 'string?' },
+  frames: false,
+});
+// 注册纯插件 OAuth 订阅协议(无本机进程、手机浏览器装扩展时直连 4 家订阅)
+协议适配['plugin-sub'] = {
+  名称: '纯插件 OAuth 订阅 (免本机进程)',
+  默认端点: 'plugin-sub://grok-build',
+  类型: { chat: { 名: '文本', 后缀: '' } },
+  对话请求: () => ({}),
+  执行对话: (p, a) => 插件订阅.对话(p, a),
+  拉模型: p => {
+    const id = String(p.endpoint || '').replace(/^plugin-sub:\/\//, '');
+    return { models: (插件订阅.表[id]?.models || []).slice(), hints: {} };
+  },
+};
 // ✂ 登记能力 完
 打包.播种().catch(e => console.warn('[ai] 配置种子没播成:', e.message));
+订阅网关.刷新().then(st => { if (st) { 订阅网关.连网页桥(); 订阅网关.推厂商().catch(() => {}); } }).catch(() => {});
+if (typeof document !== 'undefined') {
+  const 推防抖 = (() => { let t = null; return () => { clearTimeout(t); t = setTimeout(() => { if (订阅网关.ok) 订阅网关.推厂商().catch(() => {}); }, 600); }; })();
+  document.addEventListener('ai:providers', 推防抖);
+  ctx.cleanup(() => { document.removeEventListener('ai:providers', 推防抖); 订阅网关.断网页桥(); });
+}
 if (typeof document !== 'undefined' && ctx.root) {
   const card = document.createElement('div');
   ctx.root.append(card);
