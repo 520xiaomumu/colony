@@ -12,7 +12,7 @@ font-family:-apple-system,"PingFang SC",sans-serif}
 </style>
 </head>
 <body>
-<!--COLONY-LINEAGE {"id":"0f750ffee975749e","parent":"6e6396c0341f1b0c","blocks":[{"id":"petri:local","version":1}]}-->
+<!--COLONY-LINEAGE {"id":"955f9e5c87384a00","parent":"6e6396c0341f1b0c","blocks":[{"id":"petri:local","version":1}]}-->
 <div id="colony-root"></div>
 <script id="stem" type="colony/stem">// ✂ 跑块
 (function (g) {
@@ -443,23 +443,9 @@ const 面板 = {
     else {
       const 表 = [['系统', i.osName + ' · ' + i.arch + (i.termux ? ' · Termux' : '')], ['shell', i.shell],
         ['用户目录', i.home], ['默认工作目录', i.cwd], ['Node', i.node], ['进程号', i.pid], ['本机脚本', i.dir],
-        ['控制面', i.host + ':' + i.port + '（锁死仅本机）']], L = i.lastRestart, g = i.gateway;
+        ['听的地址', i.host + ':' + i.port]], L = i.lastRestart;
       h += '<h3>这台电脑</h3><table class="lc-t">'
         + 表.map(([k, v]) => `<tr><td>${k}</td><td>${e(v)}</td></tr>`).join('') + '</table>';
-      if (g) {
-        const gt = g.running
-          ? (g.expose ? '局域网外放中 · 需密码' : '仅本机免密') + (g.mode === 'full' ? ' · 聚合网关' : ' · 仅 /proxy')
-          : '未启动' + (g.error ? ' · ' + g.error : '');
-        h += '<h3>同进程聚合网关（:4135 数据面 · 物理隔离无命令行）</h3><div class="lc-row"><div class="lc-top">'
-          + `<span class="lc-tag${g.running ? ' ok' : ' bad'}">${e(gt)}</span>`
-          + (g.running ? `<code>${e(g.localEndpoint || ('http://127.0.0.1:' + g.port + '/v1'))}</code>`
-            + 钮('copy', g.localEndpoint || ('http://127.0.0.1:' + g.port + '/v1'), '复制地址') : '')
-          + '<i class="lc-sp"></i>'
-          + (colony.has('ui.do') ? 钮('openAi', '', '打开 AI 配置管理订阅与外放') : '')
-          + '</div>'
-          + (g.running ? `<p class="lc-hint" style="margin:6px 0 0">常规厂商已同步 ${g.syncedProviderCount || 0} 家 · 网页模型反桥 ${g.webBridgeOnline ? ('在线(' + (g.webModelCount || 0) + ' 个模型)') : '离线'} · 支持 OpenAI /v1、Anthropic /v1/messages 与 /proxy 免跨域</p>` : '')
-          + '</div>';
-      }
       if (L) h += `<p class="lc-msg bad">上次重启没成(${面板.时(L.at)}): ${e(L.why)}, 已退回能跑的版本</p>`
         + `<pre class="lc-pre">${e(L.tail)}</pre>`;
       h += `<h3>后台进程 · ${js.length}${钮('jobs', '', '刷新')}</h3>` + (js.map(j => '<div class="lc-row">'
@@ -512,8 +498,6 @@ const 面板 = {
       await 面板.画();
     };
     if (a === 'copy') return 面板.复制(v, b);
-    if (a === 'openAi') return ctx.call('ui.do', { target: 'block:petri:ai', action: '打开' })
-      .catch(() => ctx.call('ui.do', { target: 'win:block:petri:ai', action: '到最前' })).catch(() => {});
     if (a === 'jobs') return 面板.画();
     if (a === 'conn') return 忙(async () => {
       if (await 连.试(ctx.root.querySelector('[data-f="url"]').value)) return '连上了';

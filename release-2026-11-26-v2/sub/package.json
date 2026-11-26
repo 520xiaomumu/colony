@@ -1,0 +1,13 @@
+{
+  "name": "colony-sub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Colony local subscription proxy gateway",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.27"
+  }
+}

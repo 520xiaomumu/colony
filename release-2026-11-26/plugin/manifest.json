@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Colony Bridge",
-  "version": "0.6.0",
-  "version_name": "0.6",
-  "description": "Colony 通用浏览器与网络枢纽: 无感免 CORS 转发(含流式)、零黄条静默后台标签与网页模型支持、纯插件 OAuth 回调捕获与临时请求头规则、Chrome tabs/CDP RPC、本机聚合网关(:4135)与端点扫描、通知与自重载。",
+  "version": "0.5.0",
+  "description": "Colony 通用浏览器与网络枢纽: HTTP(S) 转发、Chrome tabs/CDP RPC(含事件回传)、chrome.* 透传、用户脚本(篡改猴式)、本机端点扫描、通知与自重载。子框架摘掉 XFO/CSP 以便 Colony 内用真 iframe 浏览。",
   "permissions": [
     "storage",
     "notifications",

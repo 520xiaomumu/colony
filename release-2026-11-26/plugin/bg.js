@@ -8,13 +8,13 @@ try { importScripts('instr.js'); } catch (e) { console.warn('[colony] instr.js �
 /* 已知 agent/模型端口 + 识别标签(浏览器列不出所有开放端口=安全限制, 故探这批已知的, 用 /v1/models 验真)。
    排除逻辑靠指纹: 系统必开端口/dev server 不会对 /v1/models 回合法模型数组, 天然被滤掉。 */
 const PORT_HINTS = {
-  4135: 'Colony 聚合网关(订阅+OpenRouter)', 18790: 'OpenClaw 系(openclaw/qclaw/kimiclaw/minimaxclaw)', 8642: 'Hermes gateway', 11434: 'Ollama', 1234: 'LM Studio',
+  18790: 'OpenClaw 系(openclaw/qclaw/kimiclaw/minimaxclaw)', 8642: 'Hermes gateway', 11434: 'Ollama', 1234: 'LM Studio',
   1337: 'Jan', 4000: 'pi-gateway', 4123: 'colony-gateway', 8080: 'Llamafile/通用', 8000: 'vLLM/通用',
   5000: '通用', 3000: '通用 dev', 8787: 'wrangler/通用', 9997: 'Xinference', 5001: '通用',
 };
 /* 成员初始名: 已知 agent 端口给短名(减少 agent 没自报姓名的认错), 未知端口 → 端口号后缀(见 scan) */
-const PORT_NAMES = { 4135: 'colony-gateway', 18790: 'openclaw', 8642: 'hermes', 11434: 'ollama', 1234: 'lmstudio', 4123: 'colony-agent-gw', 1337: 'jan', 4000: 'pi-gateway', 9997: 'xinference' };
-const SCAN_PORTS = [4135, 18790, 8642, 4000, 4123, 1234, 11434, 1337, 8080, 8000, 5000, 3000, 8787, 11435, 8090, 1235, 4001, 9997, 8001, 5001];
+const PORT_NAMES = { 18790: 'openclaw', 8642: 'hermes', 11434: 'ollama', 1234: 'lmstudio', 4123: 'colony-gateway', 1337: 'jan', 4000: 'pi-gateway', 9997: 'xinference' };
+const SCAN_PORTS = [18790, 8642, 4000, 4123, 1234, 11434, 1337, 8080, 8000, 5000, 3000, 8787, 11435, 8090, 1235, 4001, 9997, 8001, 5001];
 
 function allowed(url) {
   try { const u = new URL(url); return u.protocol === 'http:' || u.protocol === 'https:'; }
@@ -72,85 +72,6 @@ async function withSiteOrigin(url, fn) {
   }
 }
 
-/* ── 通用原语 1: 临时 DNR 请求头改写(支持 User-Agent 等 fetch 受限头, 用完立即清规则) ── */
-let hdrRuleSeq = 0;
-async function withDnrHeaders(url, hdrMap, fn) {
-  const entries = Object.entries(hdrMap || {}).filter(([k, v]) => k && v != null);
-  if (!entries.length) return fn();
-  const host = new URL(url).hostname;
-  const id = 11000 + ((hdrRuleSeq = (hdrRuleSeq + 1) % 800));
-  await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [id],
-    addRules: [{
-      id, priority: 40,
-      action: { type: 'modifyHeaders', requestHeaders: entries.map(([h, v]) => ({ header: h.toLowerCase(), operation: 'set', value: String(v) })) },
-      condition: { requestDomains: [host], initiatorDomains: [chrome.runtime.id] },
-    }],
-  });
-  try { return await fn(); }
-  finally { chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [id] }).catch(() => {}); }
-}
-
-/* ── 启动时清理 SW 重启可能遗留的临时 DNR 规则(10000..11800), 不碰静态规则和 iframe 规则 ── */
-(async () => {
-  try {
-    const rs = await chrome.declarativeNetRequest.getSessionRules();
-    const stale = rs.filter(r => r.id >= 10000 && r.id < 11800).map(r => r.id);
-    if (stale.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: stale });
-  } catch {}
-})();
-
-/* ── 通用原语 2: 一次性 OAuth 回调拦截(手机/无本机时三重拦截 http://localhost:... 回调取 code 并关页) ── */
-const activeOAuth = new Map();
-async function oauthIntercept(req) {
-  const authUrl = String(req.authUrl || '').trim();
-  const prefix = String(req.redirectPrefix || '').trim();
-  if (!authUrl || !prefix) return { error: 'oauthIntercept 需要 {authUrl, redirectPrefix}' };
-  const timeoutMs = Math.min(Math.max(Number(req.timeoutMs) || 300000, 10000), 600000);
-  if (activeOAuth.has(prefix)) { try { activeOAuth.get(prefix)({ error: '已发起新的授权请求' }); } catch {} }
-  let tabId = null;
-  return await new Promise(async (resolve) => {
-    let done = false;
-    const finish = (res) => {
-      if (done) return;
-      done = true;
-      if (activeOAuth.get(prefix) === finish) activeOAuth.delete(prefix);
-      clearTimeout(timer);
-      try { chrome.webNavigation.onBeforeNavigate.removeListener(onNav); } catch {}
-      try { chrome.webNavigation.onErrorOccurred.removeListener(onNav); } catch {}
-      try { chrome.tabs.onUpdated.removeListener(onUpd); } catch {}
-      try { chrome.tabs.onRemoved.removeListener(onRem); } catch {}
-      if (tabId != null && res && res.ok) { try { chrome.tabs.remove(tabId).catch(() => {}); } catch {} }
-      resolve(res);
-    };
-    activeOAuth.set(prefix, finish);
-    const hit = (u) => {
-      if (!u || !u.startsWith(prefix)) return false;
-      finish({ ok: true, callbackUrl: u });
-      return true;
-    };
-    const onNav = (d) => { if (tabId != null && d.tabId === tabId && d.frameId === 0) hit(d.url); };
-    const onUpd = (tid, info) => { if (tabId != null && tid === tabId && info.url) hit(info.url); };
-    const onRem = (tid) => { if (tabId != null && tid === tabId) finish({ error: '登录窗口已关闭，未完成授权' }); };
-    chrome.webNavigation.onBeforeNavigate.addListener(onNav);
-    chrome.webNavigation.onErrorOccurred.addListener(onNav);
-    chrome.tabs.onUpdated.addListener(onUpd);
-    chrome.tabs.onRemoved.addListener(onRem);
-    const timer = setTimeout(() => {
-      if (tabId != null) { try { chrome.tabs.remove(tabId).catch(() => {}); } catch {} }
-      finish({ error: '等待 OAuth 回调超时' });
-    }, timeoutMs);
-    try {
-      const tab = await chrome.tabs.create({ url: authUrl, active: true });
-      tabId = tab.id;
-      if (tab.pendingUrl) hit(tab.pendingUrl);
-      if (tab.url) hit(tab.url);
-    } catch (e) {
-      finish({ error: '无法打开授权页: ' + e.message });
-    }
-  });
-}
-
 async function doFetch(req) {
   if (!allowed(req.url)) return deny(req.url);
   const ctrl = new AbortController();
@@ -169,9 +90,8 @@ async function doFetch(req) {
     }
     const opts = { method: req.method || 'GET', headers, body: sendBody, signal: ctrl.signal };
     if (req.asSite || req.credentials) opts.credentials = req.credentials || 'include';
-    const run0 = () => fetch(req.url, opts);
-    const run1 = req.dnrHeaders ? () => withDnrHeaders(req.url, req.dnrHeaders, run0) : run0;
-    const res = req.asSite ? await withSiteOrigin(req.url, run1) : await run1();
+    const run = () => fetch(req.url, opts);
+    const res = req.asSite ? await withSiteOrigin(req.url, run) : await run();
     const out = {}; res.headers.forEach((v, k) => { out[k] = v; });
     const ct = res.headers.get('content-type') || '';
     /* 二进制回执: 图/音/视/压缩包等塞进 JS 字符串会被 UTF-8 解码器把非法字节替换成 U+FFFD(必损坏),
@@ -748,13 +668,13 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
     sendResponse({ error: '拒绝非 Colony 页面调用插件权限' });
     return false;
   }
-  if (本机文件 && !LOCAL_FILE_OPS.has(m.op)) {
-    sendResponse({ error: '本机打开的 Colony 文件未开放该操作(' + m.op + ')' });
+  if (本机文件 && (!LOCAL_FILE_OPS.has(m.op) || (m.op === 'fetch' && !localOnly((m.req || {}).url)))) {
+    sendResponse({ error: '本机打开的 Colony 文件只能连本机 agent(' + m.op + ' 要在 colonyai.fun 上用)' });
     return false;
   }
   (async () => {
     try {
-      if (m.op === 'ping') { const mf = chrome.runtime.getManifest(); return sendResponse({ ok: true, plugin: 'colony-bridge', version: mf.version_name || mf.version, build: 'generic-rpc-2' }); }
+      if (m.op === 'ping') return sendResponse({ ok: true, plugin: 'colony-bridge', version: chrome.runtime.getManifest().version, build: 'generic-rpc-1' });
       if (m.op === 'fetch') return sendResponse(await doFetch(m.req || {}));
       if (m.op === 'localFile') return sendResponse(await localFile(m.req || {}));
       if (m.op === 'instr') { // 接入指令: Colony agent 桥接的「接入」页从这里拿, 不自己写一份
@@ -763,16 +683,6 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
       if (m.op === 'browser') return sendResponse(await browserCall(m.req || {}));
       if (m.op === 'ext') return sendResponse(await extCall(m.req || {}));   // 通用 chrome.* 透传(白名单)
       if (m.op === 'bgTab') return sendResponse(await bgTabOp(m.req || m));   // 静默折叠标签组开/关后台页
-      if (m.op === 'oauthIntercept') return sendResponse(await oauthIntercept(m.req || m));   // 一次性 OAuth 回调捕获(纯插件订阅)
-      if (m.op === 'subStore') {   // 扩展独立存储(纯插件 OAuth Token, 不进页面 localStorage)
-        const k = 'colonyPluginSubs';
-        const cur = (await chrome.storage.local.get(k))[k] || {};
-        const a = m.req || m;
-        if (a.action === 'get') return sendResponse({ ok: true, data: a.id ? (cur[a.id] || null) : cur });
-        if (a.action === 'set' && a.id) { cur[a.id] = a.value; await chrome.storage.local.set({ [k]: cur }); return sendResponse({ ok: true }); }
-        if (a.action === 'del' && a.id) { delete cur[a.id]; await chrome.storage.local.set({ [k]: cur }); return sendResponse({ ok: true }); }
-        return sendResponse({ error: 'subStore action: get|set|del' });
-      }
       if (m.op === 'runPage') return sendResponse(await runPageOp(m.req || m));   // 无调试器、无黄条在页内执行异步 JS
       if (m.op === 'recStart') return sendResponse(await recStart(m, sender));   // 免点录屏(插件里录)
       if (m.op === 'recStop') return sendResponse(await recStop());
@@ -970,12 +880,11 @@ chrome.runtime.onConnect.addListener((port) => {
     if (m && m.keepalive) return;
     const req = (m && m.req) || {};
     if (!allowed(req.url)) { port.postMessage({ ...deny(req.url), done: true }); return; }
-    if (本机文件 && !m.colonyPage) { port.postMessage({ error: '拒绝非 Colony 本地文件的流式请求', done: true }); return; }
+    if (本机文件 && !(m.colonyPage && localOnly(req.url))) { port.postMessage({ error: '本机打开的 Colony 文件只能连本机 agent', done: true }); return; }
     hb = setInterval(() => { try { port.postMessage({ keepalive: true }); } catch { clearInterval(hb); } }, 20000);
     try {
       const headers = await withInjectedAuth(req.url, req.headers); // 流式也注入存的 key
-      const doReq = () => fetch(req.url, { method: req.method || 'POST', headers, body: req.body || undefined, signal: ctrl.signal });
-      const res = req.dnrHeaders ? await withDnrHeaders(req.url, req.dnrHeaders, doReq) : await doReq();
+      const res = await fetch(req.url, { method: req.method || 'POST', headers, body: req.body || undefined, signal: ctrl.signal });
       if (!res.ok) { port.postMessage({ error: 'HTTP ' + res.status + ' ' + (await res.text()).slice(0, 300), done: true, status: res.status }); return; }
       const reader = res.body.getReader(); const dec = new TextDecoder();
       while (true) { const { value, done } = await reader.read(); if (done) break; port.postMessage({ delta: dec.decode(value, { stream: true }) }); }

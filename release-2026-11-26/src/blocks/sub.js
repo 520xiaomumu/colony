@@ -1,0 +1,377 @@
+// ═ 自报 ═
+// 把各家订阅账号(Cursor / Grok Build / Antigravity 等)在本机转成标准 OpenAI 兼容接口, 登录完自动同步到 AI 配置;
+// 真实凭证只存在本机 ~/colony-sub/tokens/, 删掉本块和该目录即彻底卸载, 不动其他块和 Stem
+// 数据 {"prefix": "settings:sub.", "label": "本机订阅代理地址与已同步厂商", "kind": "config"}
+// 现在 sub.status
+
+// ═ 技能 ═
+// ▸ 用订阅: 要登录订阅账号、启停本机订阅代理或把订阅模型同步到 AI 配置时
+//   1. 先 sub.status 看本机代理 (默认 http://127.0.0.1:4135) 是否在线及各渠道状态。
+//   2. 没在线就 sub.start 经本机拉起 ~/colony-sub/server.mjs。
+//   3. 登录用 sub.login {driver, mode?, apiKey?}: browser/device 模式会回授权链接(和验证码), 等用户在浏览器点确认后调 sub.status 看 loggedIn:true, 再 sub.sync 写进 AI 配置。
+//   4. 卸载前可 sub.clean 删掉本块同步进 AI 配置的厂商记录。
+
+// ═ 代理连接 ═
+const 代理 = {
+  键: 'settings:sub.url',
+  同步键: 'settings:sub.synced',
+  url: 'http://127.0.0.1:4135',
+  ok: false,
+  状态: null,
+  错: '',
+  听: [],
+  变() { 代理.听.forEach(f => f()); },
+  async 读址() {
+    const saved = await ctx.kv.get(代理.键);
+    if (saved) 代理.url = String(saved).replace(/\/+$/, '');
+    return 代理.url;
+  },
+  async 设址(u) {
+    u = String(u || '').trim().replace(/\/+$/, '');
+    if (!u) return 代理.url;
+    代理.url = /^https?:\/\//i.test(u) ? u : 'http://' + u;
+    await ctx.kv.set(代理.键, 代理.url);
+    return 代理.url;
+  },
+  async 请(path, opt = {}) {
+    const ms = opt.timeout || 15000;
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
+    let r;
+    try {
+      const init = { method: opt.method || 'GET', signal: ac.signal };
+      if (opt.body !== undefined) {
+        init.method = opt.method || 'POST';
+        init.headers = { 'Content-Type': 'application/json' };
+        init.body = JSON.stringify(opt.body);
+      }
+      r = await fetch(代理.url + path, init);
+    } catch (e) {
+      throw Object.assign(new Error(ac.signal.aborted ? '请求超时' : '连不上本机订阅代理 ' + 代理.url), { 断: true });
+    } finally { clearTimeout(t); }
+    const j = await r.json().catch(() => ({ error: { message: '响应不是 JSON (' + r.status + ')' } }));
+    if (!r.ok || j?.error) {
+      const msg = typeof j?.error === 'string' ? j.error : (j?.error?.message || ('HTTP ' + r.status));
+      throw new Error(msg);
+    }
+    return j;
+  },
+  async 刷新() {
+    await 代理.读址();
+    try {
+      代理.状态 = await 代理.请('/admin/status', { timeout: 4000 });
+      代理.ok = true;
+      代理.错 = '';
+    } catch (e) {
+      代理.ok = false;
+      代理.状态 = null;
+      代理.错 = e.message;
+    }
+    代理.变();
+    return 代理.状态;
+  },
+  async 启动() {
+    await 代理.读址();
+    if (await 代理.刷新()) return { ok: true, alreadyRunning: true, status: 代理.状态 };
+    if (!colony.has('local.run')) throw new Error('需要先连上「本机」块才能自动启动订阅代理');
+    const info = await ctx.call('local.info', {});
+    const isWin = info.os === 'win32';
+    const port = (/:(\d+)$/.exec(代理.url) || [])[1] || '4135';
+    const dir = isWin ? info.home + '\\colony-sub' : info.home + '/colony-sub';
+    const cmd = isWin
+      ? `Start-Process -FilePath "node" -ArgumentList "server.mjs","--port","${port}" -WorkingDirectory "${dir}" -WindowStyle Hidden`
+      : `nohup node "${dir}/server.mjs" --port ${port} >/dev/null 2>&1 &`;
+    await ctx.call('local.run', { cmd, cwd: dir, wait: 5000 });
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 400));
+      if (await 代理.刷新()) return { ok: true, started: true, status: 代理.状态 };
+    }
+    throw new Error('已尝试启动但端口仍未响应，请检查 ~/colony-sub/server.mjs');
+  },
+  async 停止() {
+    if (!代理.ok && !await 代理.刷新()) return { ok: true, alreadyStopped: true };
+    await 代理.请('/admin/shutdown', { method: 'POST', timeout: 3000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 400));
+    await 代理.刷新();
+    return { ok: true, stopped: !代理.ok };
+  },
+  async 同步(driverId) {
+    const st = await 代理.刷新();
+    if (!st) throw new Error('订阅代理未运行');
+    if (!colony.has('ai.configure')) throw new Error('AI 配置块不可用');
+    const targets = (st.drivers || []).filter(d => d.loggedIn && (!driverId || d.id === driverId));
+    if (!targets.length) throw new Error(driverId ? '该渠道尚未登录' : '还没有已登录的渠道可同步');
+    const synced = (await ctx.kv.get(代理.同步键)) || {};
+    const results = [];
+    for (const d of targets) {
+      const cfg = await ctx.call('ai.configure', {
+        name: d.providerName || ('订阅 · ' + d.name),
+        endpoint: d.endpoint,
+        apiKey: '',
+        protocol: 'openai-compatible',
+        toolMode: 'native',
+      });
+      synced[d.id] = { providerName: cfg.name, providerId: cfg.id, endpoint: d.endpoint, at: Date.now() };
+      results.push({ driver: d.id, provider: cfg.name, models: (cfg.models || []).length, pulled: cfg.pulled });
+    }
+    await ctx.kv.set(代理.同步键, synced);
+    代理.变();
+    return { ok: true, synced: results };
+  },
+  async 清理同步() {
+    const synced = (await ctx.kv.get(代理.同步键)) || {};
+    const removed = [];
+    if (colony.has('ai.remove')) {
+      for (const [id, rec] of Object.entries(synced)) {
+        try {
+          await ctx.call('ai.remove', { provider: rec.providerName });
+          removed.push(rec.providerName);
+        } catch {}
+      }
+    }
+    await ctx.kv.set(代理.同步键, {});
+    代理.变();
+    return { ok: true, removed };
+  },
+};
+
+// ═ 面板 ═
+const 面板 = {
+  脏的: true,
+  话: '',
+  轮询: null,
+  开Key: {},
+  esc: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'),
+  时: t => t ? new Date(t).toLocaleString('zh-CN', { hour12: false }) : '',
+  样式: `.sb{--m:var(--text-muted,#8a8a8a);--a:var(--accent,#B5FF00);--l:var(--border,#ffffff14);
+    padding:16px;color:var(--text,#fafafa);min-height:220px;
+    font:13px/1.5 var(--sans,-apple-system,"PingFang SC",sans-serif)}
+    .sb-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .sb-sp{flex:1}.sb-msg{font-size:12px;color:var(--a);min-height:18px;margin:6px 0;white-space:pre-wrap}
+    .sb-msg.bad{color:var(--danger,#f44)}
+    .sb-tag{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--l);color:var(--m)}
+    .sb-tag.ok{color:var(--a);border-color:var(--a)}.sb-tag.bad{color:var(--danger,#f44);border-color:var(--danger,#f44)}
+    .sb-tag.wait{color:#f5c542;border-color:#f5c542}
+    .sb button{background:var(--bg,#0a0a0a);color:inherit;border:1px solid var(--l);border-radius:8px;
+    padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}
+    .sb button:hover{border-color:var(--a)}.sb button:disabled{opacity:.5}
+    .sb button.pri{background:var(--a);color:#0a0a0a;border-color:var(--a);font-weight:600}
+    .sb input{background:var(--bg,#0a0a0a);color:inherit;border:1px solid var(--l);border-radius:8px;
+    padding:4px 8px;font:12px var(--mono,monospace)}
+    .sb-card{border:1px solid var(--l);border-radius:12px;padding:12px 14px;margin:10px 0;background:var(--bg-2,#131313)}
+    .sb-desc{font-size:12px;color:var(--m);margin:4px 0 8px}
+    .sb-box{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--bg,#0a0a0a);border:1px solid var(--l);font-size:12px}
+    .sb-code{font:15px var(--mono,monospace);letter-spacing:2px;color:var(--a);margin:4px 0}
+    .sb-link{color:var(--a);word-break:break-all;text-decoration:underline;cursor:pointer}
+    .sb-foot{margin-top:16px;padding-top:10px;border-top:1px solid var(--l);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .sb-hint{font-size:12px;color:var(--m)}`,
+  看得见: () => !!(ctx.root && ctx.root.isConnected && ctx.root.offsetParent !== null
+    && (ctx.root.parentNode.id !== 'colony-root' || !colony.has('ui.do'))),
+  说(t, 坏) {
+    面板.话 = (坏 ? '!' : '') + t;
+    const el = ctx.root?.querySelector('.sb-msg');
+    if (el) { el.textContent = t; el.classList.toggle('bad', !!坏); }
+  },
+  管轮询(drivers) {
+    const hasPending = (drivers || []).some(d => d.login?.state === 'pending');
+    if (hasPending && !面板.轮询) {
+      面板.轮询 = setInterval(async () => {
+        if (!面板.看得见()) return;
+        const prev = (代理.状态?.drivers || []).filter(d => d.loggedIn).map(d => d.id).join(',');
+        await 代理.刷新();
+        const now = (代理.状态?.drivers || []).filter(d => d.loggedIn).map(d => d.id).join(',');
+        if (now && now !== prev) {
+          代理.同步().then(() => 面板.说('登录成功，已自动同步到 AI 配置')).catch(e => 面板.说('登录成功但同步失败: ' + e.message, true));
+        }
+      }, 2000);
+    } else if (!hasPending && 面板.轮询) {
+      clearInterval(面板.轮询);
+      面板.轮询 = null;
+    }
+  },
+  脏() {
+    面板.脏的 = true;
+    if (面板.看得见()) 面板.画().catch(e => { ctx.root.textContent = '订阅面板渲染失败: ' + e.message; });
+  },
+  async 画() {
+    if (!ctx.root) return;
+    面板.脏的 = false;
+    const e = 面板.esc, st = 代理.状态, ok = 代理.ok;
+    const synced = (await ctx.kv.get(代理.同步键)) || {};
+    const drivers = st?.drivers || [];
+    面板.管轮询(drivers);
+    const 钮 = (a, v, t, cls = '') => `<button class="${cls}" data-a="${a}" data-v="${e(v)}">${e(t)}</button>`;
+    let h = `<div class="sb"><style>${面板.样式}</style><div class="sb-top"><b>🔑 订阅中心</b>`
+      + (ok ? `<span class="sb-tag ok">在线 · PID ${e(st.pid)} · v${e(st.version)}</span>`
+        : `<span class="sb-tag bad">未启动</span>`)
+      + '<i class="sb-sp"></i>'
+      + `<input data-f="url" style="width:185px" value="${e(代理.url)}" spellcheck="false">`
+      + (ok ? 钮('refresh', '', '刷新') + 钮('syncAll', '', '全部同步到 AI 配置', 'pri') + 钮('stop', '', '停止')
+        : 钮('start', '', '启动本机代理', 'pri') + 钮('refresh', '', '重连'))
+      + `</div><div class="sb-msg${面板.话[0] === '!' ? ' bad' : ''}">${e(面板.话.replace(/^!/, ''))}</div>`;
+
+    if (!ok) {
+      h += `<div class="sb-card"><p class="sb-hint">本机订阅代理尚未运行（${e(代理.错 || '端口 4135 未响应')}）。</p>`
+        + `<p class="sb-hint">点上方「启动本机代理」自动拉起 ~/colony-sub/server.mjs，或在终端运行：<code>node ~/colony-sub/server.mjs</code></p></div>`;
+    } else {
+      for (const d of drivers) {
+        const lg = d.login || { state: 'idle' };
+        const syn = synced[d.id];
+        const tag = d.loggedIn
+          ? `<span class="sb-tag ok">已登录 · ${e(d.account || '已认证')}</span>`
+          : lg.state === 'pending'
+            ? `<span class="sb-tag wait">等待浏览器确认…</span>`
+            : `<span class="sb-tag">未登录</span>`;
+        h += `<div class="sb-card"><div class="sb-top"><b>${e(d.name)}</b>${tag}`
+          + (d.modelCount != null ? `<span class="sb-tag">${d.modelCount} 个模型</span>` : '')
+          + (syn ? `<span class="sb-tag ok">已同步 → ${e(syn.providerName)}</span>` : '')
+          + '<i class="sb-sp"></i>';
+        if (d.loggedIn) {
+          h += 钮('sync', d.id, '同步模型', 'pri') + 钮('logout', d.id, '退出登录');
+        } else if (lg.state === 'pending') {
+          h += 钮('cancel', d.id, '取消登录');
+        } else {
+          const modes = d.authModes || [];
+          const hasCodex = modes.includes('codex');
+          const hasBrowser = modes.includes('browser');
+          const hasDevice = modes.includes('device');
+          if (hasCodex) h += 钮('loginFlow', d.id + '|codex', 'Codex OAuth 登录', 'pri');
+          if (hasBrowser) h += 钮('loginFlow', d.id + '|browser', hasCodex ? '官方 SIWC 登录' : '一键浏览器登录', hasCodex ? '' : 'pri');
+          else if (hasDevice) h += 钮('loginFlow', d.id + '|device', '设备码登录', hasCodex ? '' : 'pri');
+          if (modes.includes('apiKey')) {
+            h += 钮('toggleKey', d.id, 面板.开Key[d.id] ? '收起 Key 输入' : '贴 API Key');
+          }
+        }
+        h += `</div><div class="sb-desc">${e(d.desc)}</div>`;
+        if (d.loggedIn) {
+          h += `<div class="sb-hint">端点：<code>${e(d.endpoint)}</code>`
+            + (d.expiresAt ? ` · 到期：${e(面板.时(d.expiresAt))}` : '')
+            + (d.usageUrl ? ` · <a class="sb-link" href="${e(d.usageUrl)}" target="_blank" rel="noopener">管理额度 ↗</a>` : '') + `</div>`;
+        }
+        if (lg.state === 'pending') {
+          h += `<div class="sb-box"><div>${e(lg.message || '请在浏览器中完成授权')}</div>`;
+          if (lg.userCode) h += `<div class="sb-code">${e(lg.userCode)}</div>`;
+          if (lg.url) h += `<div style="margin-top:6px"><a class="sb-link" href="${e(lg.url)}" target="_blank" rel="noopener">点此打开授权页 ↗</a></div>`;
+          h += `</div>`;
+        } else if (lg.state === 'error' && lg.error) {
+          h += `<div class="sb-box" style="color:var(--danger,#f44)">上次登录失败：${e(lg.error)}</div>`;
+        }
+        if (!d.loggedIn && 面板.开Key[d.id]) {
+          h += `<div class="sb-box sb-top"><input data-k="${e(d.id)}" type="password" style="flex:1" placeholder="粘贴 ${e(d.name)} API Key">`
+            + 钮('submitKey', d.id, '验证并登录', 'pri') + `</div>`;
+        }
+        h += `</div>`;
+      }
+      h += `<div class="sb-foot">${钮('clean', '', '清理已同步厂商')}`
+        + `<span class="sb-hint">凭证仅保存在本机 ~/colony-sub/tokens/；卸载本块不影响任何原有配置</span></div>`;
+    }
+    ctx.root.innerHTML = h + '</div>';
+  },
+  async 点(ev) {
+    const b = ev.target.closest('[data-a]');
+    if (!b || !ctx.root.contains(b)) return;
+    const a = b.dataset.a, v = b.dataset.v;
+    const 忙 = async fn => {
+      b.disabled = true;
+      try { const msg = await fn(); if (msg) 面板.说(msg); }
+      catch (x) { 面板.说(x.message, true); }
+      await 面板.画();
+    };
+    const urlInput = ctx.root.querySelector('[data-f="url"]');
+    if (urlInput && urlInput.value.trim() && urlInput.value.trim() !== 代理.url) {
+      await 代理.设址(urlInput.value);
+    }
+    if (a === 'refresh') return 忙(async () => { await 代理.刷新(); return 代理.ok ? '已刷新状态' : ('未连上：' + 代理.错); });
+    if (a === 'start') return 忙(async () => { await 代理.启动(); return '本机订阅代理已启动'; });
+    if (a === 'stop') return 忙(async () => { await 代理.停止(); return '已停止本机订阅代理'; });
+    if (a === 'toggleKey') { 面板.开Key[v] = !面板.开Key[v]; return 面板.画(); }
+    if (a === 'loginFlow') return 忙(async () => {
+      const [driver, mode] = v.split('|');
+      const r = await 代理.请('/admin/login/' + encodeURIComponent(driver), { body: { mode: mode || 'browser' } });
+      await 代理.刷新();
+      if (r.url) window.open(r.url, '_blank', 'noopener');
+      return r.message || '已打开浏览器授权页，完成后会自动同步';
+    });
+    if (a === 'submitKey') return 忙(async () => {
+      const inp = ctx.root.querySelector(`[data-k="${v}"]`);
+      const apiKey = inp ? inp.value.trim() : '';
+      if (!apiKey) throw new Error('请先输入 API Key');
+      await 代理.请('/admin/login/' + encodeURIComponent(v), { body: { mode: 'apiKey', apiKey }, timeout: 25000 });
+      面板.开Key[v] = false;
+      const syn = await 代理.同步(v);
+      return '登录成功，已同步 ' + (syn.synced[0]?.models || 0) + ' 个模型到 AI 配置';
+    });
+    if (a === 'cancel') return 忙(async () => {
+      await 代理.请('/admin/cancel-login/' + encodeURIComponent(v), { method: 'POST' });
+      await 代理.刷新();
+      return '已取消登录';
+    });
+    if (a === 'logout') return 忙(async () => {
+      await 代理.请('/admin/logout/' + encodeURIComponent(v), { method: 'POST' });
+      await 代理.刷新();
+      return '已退出登录';
+    });
+    if (a === 'sync') return 忙(async () => {
+      const r = await 代理.同步(v);
+      return `已同步 ${r.synced[0]?.provider}（${r.synced[0]?.models} 个模型）`;
+    });
+    if (a === 'syncAll') return 忙(async () => {
+      const r = await 代理.同步();
+      return '已同步 ' + r.synced.map(x => `${x.provider}(${x.models})`).join('、');
+    });
+    if (a === 'clean') return 忙(async () => {
+      const r = await 代理.清理同步();
+      return r.removed.length ? ('已清理厂商：' + r.removed.join('、')) : '没有需要清理的同步厂商';
+    });
+  },
+};
+// ═ 装配 ═
+const P = (path, fn, desc, schema) => ctx.provide(path, fn, { desc, schema, frames: false });
+P('sub.status', async () => {
+  const st = await 代理.刷新();
+  return st ? Object.assign({ online: true, url: 代理.url }, st) : { online: false, url: 代理.url, error: 代理.错 };
+}, '查本机订阅代理状态与各渠道登录情况', {});
+P('sub.start', () => 代理.启动(), '经本机块启动 ~/colony-sub/server.mjs 订阅代理', {});
+P('sub.stop', () => 代理.停止(), '停止本机订阅代理', {});
+P('sub.login', async a => {
+  if (!代理.ok && !await 代理.刷新()) await 代理.启动();
+  const r = await 代理.请('/admin/login/' + encodeURIComponent(a.driver), { body: { mode: a.mode, apiKey: a.apiKey }, timeout: 25000 });
+  await 代理.刷新();
+  return r;
+}, '发起指定订阅渠道登录（browser 一键浏览器授权 / device 设备码 / apiKey 粘贴密钥）', {
+  driver: 'string(如 cursor / grok-build / antigravity)',
+  mode: 'string?(browser|device|apiKey)',
+  apiKey: 'string?',
+});
+P('sub.logout', async a => {
+  const r = await 代理.请('/admin/logout/' + encodeURIComponent(a.driver), { method: 'POST' });
+  await 代理.刷新();
+  return r;
+}, '退出指定订阅渠道登录并删除本机凭据', { driver: 'string' });
+P('sub.sync', a => 代理.同步(a?.driver), '把已登录的订阅渠道同步到 AI 配置并拉取模型清单', {
+  driver: 'string?(不填同步全部已登录渠道)',
+});
+P('sub.clean', () => 代理.清理同步(), '清理本块同步进 AI 配置的所有厂商记录', {});
+
+代理.听.push(面板.脏);
+if (ctx.root) {
+  ctx.root.addEventListener('click', 面板.点);
+  const 看 = new IntersectionObserver(es => { if (es.some(x => x.isIntersecting) && 面板.脏的) 面板.脏(); });
+  let 在 = null;
+  const 挪 = new MutationObserver(() => {
+    if (ctx.root.parentNode === 在) return;
+    在 = ctx.root.parentNode;
+    面板.脏();
+  });
+  看.observe(ctx.root);
+  if (ctx.root.parentNode) 挪.observe(ctx.root.parentNode, { childList: true });
+  ctx.cleanup(() => {
+    ctx.root.removeEventListener('click', 面板.点);
+    看.disconnect();
+    挪.disconnect();
+    if (面板.轮询) { clearInterval(面板.轮询); 面板.轮询 = null; }
+  });
+  ctx.root.innerHTML = '<div style="padding:16px;min-height:200px;color:#8a8a8a">订阅中心 · 载入中…</div>';
+  在 = ctx.root.parentNode;
+}
+代理.刷新().catch(() => {});
+return {};

@@ -7,20 +7,13 @@
 const http = require('http'), fs = require('fs'), path = require('path'), os = require('os');
 const cp = require('child_process'), { createHash } = require('crypto');
 const { StringDecoder } = require('string_decoder');
-const { pathToFileURL } = require('url');
 const ME = __filename, DIR = __dirname, BAK = path.join(DIR, '.colony-local');
 const LOG = path.join(BAK, 'out.log');
 const WIN = process.platform === 'win32', TERMUX = /com\.termux/.test(process.env.PREFIX || '');
 const HOME = os.homedir(), argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf('--' + k); return i < 0 ? d : argv[i + 1]; };
-const PORT = +opt('port', 4130), CWD = path.resolve(opt('cwd', HOME));
-// 控制面(:4130 具备本机命令/文件读写权限)强制死锁 127.0.0.1, 严禁外放 0.0.0.0
-const RAW_HOST = opt('host', '127.0.0.1');
-const HOST = /^(127\.0\.0\.1|localhost|::1)$/i.test(RAW_HOST) ? RAW_HOST : '127.0.0.1';
-if (HOST !== RAW_HOST) console.warn('[colony-local] 控制面禁止绑定 ' + RAW_HOST + ', 已强制锁定 127.0.0.1');
-const GW_PORT = +opt('gateway-port', process.env.COLONY_SUB_PORT || 4135) || 4135;
-const NO_GW = argv.includes('--no-gateway');
-const PING = 'http://127.0.0.1:' + PORT + '/ping';
+const PORT = +opt('port', 4130), HOST = opt('host', '127.0.0.1'), CWD = path.resolve(opt('cwd', HOME));
+const PING = 'http://' + (/^(0\.0\.0\.0|::)$/.test(HOST) ? '127.0.0.1' : HOST) + ':' + PORT + '/ping';
 const VER = createHash('sha256').update(fs.readFileSync(ME)).digest('hex').slice(0, 12);
 const 睡 = ms => new Promise(r => setTimeout(r, ms));
 const 错 = m => { throw new Error(m); };
@@ -162,94 +155,12 @@ for (const x of 列源()) if (x.bytes <= 1 << 20) try { 好[x.file] = fs.readFil
 catch (e) { }
 let 上次 = null, 重启中 = false;   // 上次重启没成: {at, why, tail}
 
-// ── 数据面(:4135): 与控制面同进程双端口物理隔离(路由表零 shell/文件能力), 有 colony-sub 则挂完整聚合网关, 无则挂零依赖回环 /proxy
-let 数据面 = null, 数据面模式 = 'off', 数据面错 = '';
-function 数据面状态() {
-  if (NO_GW) return { port: GW_PORT, running: false, mode: 'off' };
-  const s = 数据面 && 数据面.status;
-  return s ? Object.assign({ running: true, mode: 数据面模式 }, s)
-    : { port: GW_PORT, running: false, mode: 数据面模式, error: 数据面错 || '未启动' };
-}
-function 起兜底代理(port) {
-  const skipReq = new Set(['host', 'origin', 'referer', 'connection', 'keep-alive', 'content-length', 'transfer-encoding', 'accept-encoding']);
-  const skipRes = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-encoding', 'content-length', 'access-control-allow-origin']);
-  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true' };
-  const srv = http.createServer(async (req, res) => {
-    if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
-    const u = new URL(req.url || '/', 'http://127.0.0.1:' + port);
-    if (req.method === 'GET' && u.pathname === '/health') {
-      res.writeHead(200, Object.assign({ 'Content-Type': 'application/json' }, cors));
-      return res.end(JSON.stringify({ ok: true, name: 'colony-proxy', pid: process.pid, port, expose: false }));
-    }
-    if (u.pathname !== '/proxy') { res.writeHead(404, cors); return res.end(JSON.stringify({ error: 'Not found' })); }
-    try {
-      const t = new URL(u.searchParams.get('url') || '');
-      if (t.protocol !== 'http:' && t.protocol !== 'https:') throw new Error('仅支持 http/https');
-      const headers = {};
-      for (const [k, v] of Object.entries(req.headers)) if (v && !skipReq.has(k.toLowerCase())) headers[k] = Array.isArray(v) ? v.join(', ') : v;
-      let body;
-      if (!/^(GET|HEAD)$/i.test(req.method || 'GET')) { const c = []; for await (const x of req) c.push(x); body = Buffer.concat(c); }
-      const r = await fetch(t.toString(), { method: req.method, headers, body, redirect: 'follow' });
-      const out = Object.assign({}, cors);
-      r.headers.forEach((v, k) => { if (!skipRes.has(k.toLowerCase())) out[k] = v; });
-      res.writeHead(r.status, out);
-      if (r.body) for await (const chunk of r.body) { if (res.writableEnded) break; res.write(chunk); }
-      if (!res.writableEnded) res.end();
-    } catch (e) {
-      if (!res.headersSent) res.writeHead(502, Object.assign({ 'Content-Type': 'application/json' }, cors));
-      if (!res.writableEnded) res.end(JSON.stringify({ error: e.message }));
-    }
-  });
-  return new Promise((ok, bad) => {
-    srv.once('error', bad);
-    srv.listen(port, '127.0.0.1', () => {
-      srv.removeAllListeners('error');
-      ok({
-        status: { port, host: '127.0.0.1', expose: false, localEndpoint: 'http://127.0.0.1:' + port + '/v1',
-          proxyEndpoint: 'http://127.0.0.1:' + port + '/proxy?url={url}', lanIps: [], lanEndpoints: [] },
-        stop: () => new Promise(r => { srv.close(() => r()); if (srv.closeAllConnections) srv.closeAllConnections(); }),
-      });
-    });
-  });
-}
-async function 起数据面() {
-  if (NO_GW || 数据面) return;
-  数据面错 = '';
-  const cand = [path.join(DIR, 'sub', 'gateway.mjs'), path.join(HOME, 'colony-sub', 'gateway.mjs')];
-  const gwFile = cand.find(p => fs.existsSync(p));
-  for (let i = 0; i < 5; i++) {
-    try {
-      if (gwFile) {
-        const mod = await import(pathToFileURL(gwFile).href);
-        数据面 = await mod.startGateway({ port: GW_PORT, embedded: true });
-        数据面模式 = 'full';
-      } else {
-        数据面 = await 起兜底代理(GW_PORT);
-        数据面模式 = 'proxy-only';
-      }
-      数据面错 = '';
-      return;
-    } catch (e) {
-      数据面 = null; 数据面模式 = 'off'; 数据面错 = e.message;
-      if (/EADDRINUSE/.test(e.message) && i < 4) { await new Promise(r => setTimeout(r, 350)); continue; }
-      console.warn('[colony-local] 数据面 :' + GW_PORT + ' 未能启动(' + e.message + '), 控制面 :' + PORT + ' 照常运行');
-      return;
-    }
-  }
-}
-async function 关数据面() {
-  if (!数据面) return;
-  const g = 数据面; 数据面 = null;
-  try { await g.stop(); } catch (e) { }
-}
-
 // ── op 表
 const OPS = {
   info: () => ({ name: 'colony-local', version: VER, os: process.platform,
     osName: os.type() + ' ' + os.release(), arch: process.arch, shell: WIN ? 'powershell' : 'sh', home: HOME,
     cwd: CWD, node: process.version, pid: process.pid, dir: DIR, port: PORT, host: HOST,
-    termux: TERMUX || undefined, gateway: 数据面状态(), lastRestart: 上次, ops: Object.keys(OPS) }),
+    termux: TERMUX || undefined, lastRestart: 上次, ops: Object.keys(OPS) }),
   async run(a) {
     const j = 起(a);
     await 等(j, 毫秒(a.wait, 30000));
@@ -448,13 +359,6 @@ async function 装(撤) {
 }
 
 process.on('uncaughtException', e => console.error('出错了(服务还在):', e));
-process.on('SIGINT', () => 关数据面().finally(() => process.exit(0)));
-process.on('SIGTERM', () => 关数据面().finally(() => process.exit(0)));
 if (argv.includes('--install') || argv.includes('--uninstall')) 装(argv.includes('--uninstall'));
-else 听().then(async () => {
-  await 起数据面();
-  const gs = 数据面状态();
-  console.log('colony-local 在 ' + PING.slice(0, -4) + ' · 版本 ' + VER + ' · 目录 ' + DIR
-    + (gs.running ? '\n数据面网关(' + gs.mode + ') 在 http://' + gs.host + ':' + gs.port : '')
-    + '\n在 Colony 的「本机」面板里点「重连」。关掉这个窗口就停了; 开机自启用 --install');
-});
+else 听().then(() => console.log('colony-local 在 ' + PING.slice(0, -4) + ' · 版本 ' + VER + ' · 目录 ' + DIR
+  + '\n在 Colony 的「本机」面板里点「重连」。关掉这个窗口就停了; 开机自启用 --install'));
