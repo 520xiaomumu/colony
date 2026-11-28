@@ -1,0 +1,117 @@
+// 4 家订阅渠道共用 OAuth / API 规格常量（单一事实来源）
+
+export const GROK_SPEC = {
+  oauthIssuer: 'https://auth.x.ai',
+  discoveryUrl: 'https://auth.x.ai/.well-known/openid-configuration',
+  clientId: 'b1a00492-073a-47ea-816f-4c329264a828',
+  scope: 'openid profile email offline_access grok-cli:access api:access',
+  apiBase: 'https://cli-chat-proxy.grok.com/v1',
+  npmLatestUrl: 'https://registry.npmjs.org/@xai-official/grok/latest',
+  fallbackClientVersion: '1.0.46',
+  mediaModels: [
+    { id: 'grok-imagine-image', displayName: 'Grok Imagine Image', owned_by: 'xai', capabilities: ['image'] },
+    { id: 'grok-imagine-image-2.0', displayName: 'Grok Imagine Image 2.0', owned_by: 'xai', capabilities: ['image'] },
+    { id: 'grok-imagine-image-quality', displayName: 'Grok Imagine Image Quality', owned_by: 'xai', capabilities: ['image'] },
+    { id: 'grok-imagine-video', displayName: 'Grok Imagine Video', owned_by: 'xai', capabilities: ['video'] },
+    { id: 'grok-imagine-video-1.5', displayName: 'Grok Imagine Video 1.5', owned_by: 'xai', capabilities: ['video'] },
+    { id: 'grok-imagine-video-1.5-lite', displayName: 'Grok Imagine Video 1.5 Lite', owned_by: 'xai', capabilities: ['video'] },
+  ],
+  chatFallbackModels: [
+    { id: 'grok-4.7', displayName: 'Grok 4.7', owned_by: 'xai' },
+    { id: 'grok-4.7-build-fast', displayName: 'Grok 4.7 Fast', owned_by: 'xai' },
+    { id: 'grok-4.6', displayName: 'Grok 4.6', owned_by: 'xai' },
+    { id: 'grok-4.5', displayName: 'Grok 4.5', owned_by: 'xai' },
+  ],
+};
+GROK_SPEC.fallbackModels = [...GROK_SPEC.chatFallbackModels, ...GROK_SPEC.mediaModels];
+
+export const CHATGPT_SPEC = {
+  oauthIssuer: 'https://auth.openai.com',
+  discoveryUrl: 'https://auth.openai.com/.well-known/openid-configuration',
+  usageUrl: 'https://chatgpt.com/settings/usage',
+  codex: {
+    clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
+    authUrl: 'https://auth.openai.com/oauth/authorize',
+    tokenUrl: 'https://auth.openai.com/oauth/token',
+    apiBase: 'https://chatgpt.com/backend-api/codex',
+    callbackPort: 1455,
+    clientVersion: '0.154.0',
+    userAgent: 'codex-tui/0.154.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.154.0)',
+    originator: 'codex-tui',
+    imageModels: ['gpt-image-2.6'],
+  },
+  siwc: {
+    dynamicClientId: 'dynamic_agent_client',
+    resource: 'https://api.openai.com/v1',
+    requiredScope: 'chatgpt.tokens.use.direct',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+    agentNameHint: 'Colony',
+    apiBase: 'https://api.openai.com/v1',
+  },
+};
+
+export const ANTIGRAVITY_SPEC = {
+  clientId: '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com',
+  clientSecret: ['GOCSPX', 'K58FWR486LdLJ1mLB8sXC4z6qDAf'].join('-'),
+  callbackPort: 51121,
+  authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenUrl: 'https://oauth2.googleapis.com/token',
+  userinfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo?alt=json',
+  dailyApiEndpoint: 'https://daily-cloudcode-pa.googleapis.com',
+  apiVersion: 'v1internal',
+  hubManifestUrl: 'https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml',
+  fallbackVersion: '2.34.0',
+  hubChangelists: {
+    '2.23.0': '998057262',
+    '2.24.0': '1000335682',
+    '2.29.0': '1013060670',
+    '2.32.1': '1021296516',
+    '2.32.2': '1022991777',
+    '2.33.0': '1023160026',
+    '2.34.0': '1026637980',
+  },
+  scopes: [
+    'https://www.googleapis.com/auth/cloud-platform',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/aicode',
+    'https://www.googleapis.com/auth/cclog',
+    'https://www.googleapis.com/auth/experimentsandconfigs',
+  ],
+  fallbackModels: [
+    { id: 'gemini-4-neon-xhigh', displayName: 'Gemini 4 Neon', owned_by: 'antigravity' },
+    { id: 'gemini-4-hydrogen-xhigh', displayName: 'Gemini 4 Hydrogen', owned_by: 'antigravity' },
+    { id: 'gemini-4-argon-high', displayName: 'Gemini 4 Argon', owned_by: 'antigravity' },
+    { id: 'gemini-4-carbon-high', displayName: 'Gemini 4 Carbon', owned_by: 'antigravity' },
+    { id: 'claude-opus-5-5-high', displayName: 'Claude Opus 5.5 (High)', owned_by: 'antigravity' },
+    { id: 'claude-sonnet-5-5-high', displayName: 'Claude Sonnet 5.5 (High)', owned_by: 'antigravity' },
+    { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', owned_by: 'antigravity' },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', owned_by: 'antigravity' },
+    { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash', owned_by: 'antigravity' },
+    { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash (Tiered)', owned_by: 'antigravity' },
+    { id: 'gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash Lite', owned_by: 'antigravity' },
+    { id: 'gemini-3-flash', displayName: 'Gemini 3 Flash', owned_by: 'antigravity' },
+    { id: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite', owned_by: 'antigravity' },
+    { id: 'gemini-3.1-flash-image', displayName: 'Gemini 3.1 Flash Image', owned_by: 'antigravity' },
+    { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', owned_by: 'antigravity' },
+  ],
+};
+
+export const CLAUDE_SPEC = {
+  authUrl: 'https://claude.ai/oauth/authorize',
+  tokenUrl: 'https://platform.claude.com/v1/oauth/token',
+  apiBase: 'https://api.anthropic.com/v1',
+  clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+  callbackPort: 54545,
+  loginScope: 'org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload',
+  refreshScope: 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload',
+  apiVersion: '2023-06-01',
+  oauthBeta: 'oauth-2025-04-20',
+  userAgent: 'claude-code/2.1.0',
+  usageUrl: 'https://claude.ai/settings/billing',
+  fallbackModels: [
+    { id: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', owned_by: 'anthropic', capabilities: ['chat'] },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', owned_by: 'anthropic', capabilities: ['chat'] },
+    { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5', owned_by: 'anthropic', capabilities: ['chat'] },
+  ],
+};

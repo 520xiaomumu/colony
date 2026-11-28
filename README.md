@@ -2,9 +2,9 @@
 
 一个 HTML 文件就是一整个 AI 工作台：内核 Stem + 一个个可改源码的块（AI 配置、全能 agent、agent 桥接、界面、次元口袋、代码解读、工作流、插件管理、本机）+ 桌面小应用。
 
-- 最新版：**11.26 v2**（2026-11-26，聚合网关二合一版）· [`release-2026-11-26-v2/colony.html`](release-2026-11-26-v2/colony.html)，双击打开即可 · [发布页 v11.26.2](https://github.com/520xiaomumu/colony/releases/tag/v11.26.2) · [更新说明](release-2026-11-26-v2/更新说明.md) · [新手上手指南](release-2026-11-26-v2/README.md)
-- 独立分块版：**11.26 v1**（2026-11-26，纯粹 AI 配置 + 独立订阅中心 10 块版）· [`release-2026-11-26/colony.html`](release-2026-11-26/colony.html) · [发布页 v11.26](https://github.com/520xiaomumu/colony/releases/tag/v11.26)
-- 发布包：[release-2026-11-26-v2](release-2026-11-26-v2/)（二合一聚合网关 + 单进程双端口 + 插件 v0.6） · [release-2026-11-26](release-2026-11-26/)（纯粹 AI 配置 + 独立订阅中心） · [release-2026-11-07](release-2026-11-07/) · [release-2026-10-31](release-2026-10-31/)（含小应用、工作流） · [release-2026-10-24](release-2026-10-24/)
+- 最新版：**11.28**（2026-11-28，架构重构 + 三大网页插件修通版）· [`release-2026-11-28/colony.html`](release-2026-11-28/colony.html)，双击打开即可 · [发布页 v11.28](https://github.com/520xiaomumu/colony/releases/tag/v11.28) · [更新说明](release-2026-11-28/更新说明.md) · [新手上手指南](release-2026-11-28/README.md)
+- 历史大版本：**11.26 v2**（聚合网关二合一版）· [`release-2026-11-26-v2/colony.html`](release-2026-11-26-v2/colony.html) · [发布页 v11.26.2](https://github.com/520xiaomumu/colony/releases/tag/v11.26.2)
+- 发布包：[release-2026-11-28](release-2026-11-28/)（架构重构 + Grok/Muse/Gemini 网页插件全面修通 + 插件 v0.6） · [release-2026-11-26-v2](release-2026-11-26-v2/)（二合一聚合网关 + 单进程双端口） · [release-2026-11-26](release-2026-11-26/)（纯粹 AI 配置 + 独立订阅中心） · [release-2026-11-07](release-2026-11-07/) · [release-2026-10-31](release-2026-10-31/)（含小应用、工作流） · [release-2026-10-24](release-2026-10-24/)
 - 根目录的 [`colony.html`](colony.html) 是 10-31 版，留作旧版入口
 - 视频介绍：B 站「Colony 小剧场」https://www.bilibili.com/video/BV1QLxF6pEQF
 - 开源协议：采用 MIT 协议，见 [LICENSE](LICENSE)

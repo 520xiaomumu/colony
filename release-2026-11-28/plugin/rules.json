@@ -1,0 +1,42 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "origin",
+          "operation": "remove"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "127.0.0.1",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "origin",
+          "operation": "remove"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "localhost",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "other"
+      ]
+    }
+  }
+]
