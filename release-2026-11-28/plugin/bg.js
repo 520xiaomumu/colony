@@ -590,17 +590,14 @@ function trustedSender(sender) {
     return u.protocol === 'https:' && u.hostname === 'colonyai.fun';
   } catch { return false; }
 }
-/* 本机打开的 Colony 单文件(file://, 如单独导出的 agent 桥接): 只给「连本机 agent」那几样 ——
-   转发(只转 127.0.0.1/localhost, 见 localOnly)、扫描、成员名单、存 Key; 浏览器控制、chrome.*、录屏、用户脚本这些高权的照旧只给 colonyai.fun。
-   要求: 顶层标签页(不是别人页面里嵌的框), 且页面自己声明是 Colony(cs.js 看到 colony/petri 或 colony/stem 脚本才带 colonyPage) */
-const LOCAL_FILE_OPS = new Set(['ping', 'fetch', 'localFile', 'instr', 'scan', 'setkey', 'epRoster', 'epAdd', 'epList', 'epRemove', 'epRename', 'epClearRename', 'epUpdate', 'notify']);
+/* 本机打开的 Colony 单文件(file://, 含整包 colony.html 与独立导出的 petri-*.html): 与 colonyai.fun 权限完全对等。
+   前提: 用户已在 Chrome 扩展详情开启「允许访问文件网址」, 且为顶层标签页(frameId===0) + 页面含 Colony 标识(cs.js 验明 colonyPage) */
 function localColonyFile(sender, m) {
   try {
     const u = new URL(sender.url || '');
     return u.protocol === 'file:' && sender.frameId === 0 && !!(m && m.colonyPage) && /\.html?$/i.test(u.pathname);
   } catch { return false; }
 }
-const localOnly = (url) => { try { const h = new URL(url).hostname; return h === '127.0.0.1' || h === 'localhost' || h === '[::1]'; } catch { return false; } };
 /* ── 静默后台槽(折叠标签组) + 无横幅执行(chrome.userScripts.execute) ──
    把自动化用的后台标签页自动收进当前窗口折叠的「🤖」标签组, 不打扰用户主标签栏;
    runPage 优先走 chrome.userScripts.execute(不受 CSP 限制、不挂调试器、零黄色横幅), 无权限时回退 scripting.executeScript。 */
@@ -787,17 +784,8 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
     embedAuto(m, sender).then(sendResponse, e => sendResponse({ error: String(e && e.message || e) }));
     return true;
   }
-  const isLocalFile = !trustedSender(sender) && localColonyFile(sender, m);
-  if (!trustedSender(sender) && !isLocalFile) {
+  if (!trustedSender(sender) && !localColonyFile(sender, m)) {
     sendResponse({ error: '拒绝非 Colony 页面调用插件权限' });
-    return false;
-  }
-  if (isLocalFile && !LOCAL_FILE_OPS.has(m.op)) {
-    sendResponse({ error: '本机打开的 Colony 文件未开放该操作(' + m.op + ')' });
-    return false;
-  }
-  if (isLocalFile && m.op === 'fetch' && !localOnly(m.req?.url)) {
-    sendResponse({ error: '本机打开的 Colony 文件只允许转发 localhost/127.0.0.1' });
     return false;
   }
   if (m.op === 'reload') { sendResponse({ ok: true }); chrome.runtime.reload(); return false; }

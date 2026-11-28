@@ -12,7 +12,7 @@ font-family:-apple-system,"PingFang SC",sans-serif}
 </style>
 </head>
 <body>
-<!--COLONY-LINEAGE {"id":"9195fb1a27f17bb8","parent":"6e6396c0341f1b0c","blocks":[{"id":"petri:local","version":1}]}-->
+<!--COLONY-LINEAGE {"id":"7f508791e4da5f2b","parent":"6e6396c0341f1b0c","blocks":[{"id":"petri:local","version":1}]}-->
 <div id="colony-root"></div>
 <script id="stem" type="colony/stem">// ✂ 跑块
 (function (g) {
@@ -454,12 +454,14 @@ const 面板 = {
       : '<span class="lc-tag bad">没连上</span>') + '<i class="lc-sp"></i>'
       + `<input data-f="url" value="${e(连.url)}" spellcheck="false">` + (有 ? '' : 钮('wake', '', '⚡ 一键唤醒')) + `${钮('conn', '', '重连')}</div>`
       + `<div class="lc-msg${面板.话[0] === '!' ? ' bad' : ''}">${e(面板.话.replace(/^!/, ''))}</div>`;
-    if (!有) h += `<p class="lc-hint">${e(连.错)}</p><h3>怎么连上（零门槛）</h3><p class="lc-hint">`
-      + '首次使用：装好 Node 18+，双击解压包里的 <b>启动 Colony</b>（没有包去 '
-      + '<a href="https://github.com/520xiaomumu/colony/releases/latest" target="_blank" rel="noopener" style="color:var(--a)">GitHub 下载最新版</a>），'
-      + '会自动启动后台守护(:4130 控制面 + :4135 聚合网关)、设好开机静默自启并注册网页唤醒——之后点上方「⚡ 一键唤醒」即可随时拉起！</p>'
-      + '<p class="lc-hint">也可以在 local 文件夹里打开终端运行：</p>' + 码(面板.命令(' --install'))
-      + `<p class="lc-hint">撤掉自启与唤醒: <code>${e(面板.命令(' --uninstall'))}</code>。`
+    if (!有) h += `<p class="lc-hint">${e(连.错)}</p><h3>怎么连上（一步启动）</h3><p class="lc-hint">`
+      + '1. 安装 <b>Node.js 18+</b>（<a href="https://nodejs.org/" target="_blank" rel="noopener" style="color:var(--a)">nodejs.org</a>），'
+      + '并解压 <a href="https://github.com/520xiaomumu/colony/releases/latest" target="_blank" rel="noopener" style="color:var(--a)">Colony 完整包</a>。<br>'
+      + '2. 打开解压后的文件夹，在顶部地址栏输入 <code>cmd</code> 回车（Windows 可避开智能应用控制对 .bat 的拦截；macOS/Linux 在该目录打开终端），粘贴下方命令回车即可：</p>'
+      + 码('node local/colony-local.cjs --install')
+      + '<p class="lc-hint">如果终端已在 <code>local</code> 子目录里，运行：</p>' + 码(面板.命令(' --install'))
+      + `<p class="lc-hint">首次运行后会自动后台启动(:4130 控制面 + :4135 聚合网关)、设好开机静默自启并注册网页唤醒——以后只需点上方「⚡ 一键唤醒」。`
+      + `撤掉自启与唤醒: <code>${e(面板.命令(' --uninstall'))}</code>。`
       + 'Colony 是 https 网址打开的, 第一次连时 Chrome 会问能不能访问本机, 点允许。</p>';
     else {
       const 表 = [['系统', i.osName + ' · ' + i.arch + (i.termux ? ' · Termux' : '')], ['shell', i.shell],
